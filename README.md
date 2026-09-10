@@ -31,7 +31,7 @@ Outlook (macro)  ──register──▶  Cloudflare Worker  ──▶  Resend  
 ### 1. Resend (sends the alert emails)
 
 1. Sign up at <https://resend.com> **using the address you want alerts delivered to**
-   (e.g. `oded@humalign.ai`). On the free plan the built-in `onboarding@resend.dev`
+   (this is your `NOTIFY_TO`). On the free plan the built-in `onboarding@resend.dev`
    sender can only email your own account address — that's fine for self-alerts.
    To send alerts somewhere else, verify a domain later and change `NOTIFY_FROM`.
 2. **API Keys → Create API Key**. Copy it.

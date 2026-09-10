@@ -8,7 +8,7 @@ kv_namespaces = [
 ]
 
 [vars]
-NOTIFY_TO           = "oded@humalign.ai"
+NOTIFY_TO           = "you@example.com"   # where open/no-open alerts are sent
 NOTIFY_FROM         = "Email Tracker <onboarding@resend.dev>"
 UNOPENED_HOURS      = "24"   # alert if still not opened after this many hours
 BURST_WINDOW_MIN    = "30"   # "opened many times" window
