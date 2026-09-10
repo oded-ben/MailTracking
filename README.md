@@ -70,7 +70,7 @@ The repo is already on GitHub, so use the Git integration:
    | `NOTIFY_TO` | where alerts are sent | yes |
    | `CRON_SECRET` | long random string (Vercel sends it to `/api/cron`) | recommended |
    | `NOTIFY_FROM` | `Email Tracker <onboarding@resend.dev>` | no |
-   | `TZ` | e.g. `Asia/Jerusalem` (default `UTC`) | no |
+   | `TRACKER_TZ` | e.g. `Asia/Jerusalem` (default `UTC`; `TZ` is reserved on Vercel) | no |
    | `UNOPENED_HOURS` | default `24` | no |
    | `BURST_WINDOW_MIN` / `BURST_COUNT` | default `30` / `3` | no |
    | `IGNORE_FIRST_SECONDS` | default `15` | no |
