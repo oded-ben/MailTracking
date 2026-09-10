@@ -1,0 +1,10 @@
+{
+  "name": "mailtracking",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted email open tracker for Outlook Classic (Vercel + Upstash Redis + Resend)",
+  "dependencies": {
+    "@upstash/redis": "^1.34.3"
+  }
+}
