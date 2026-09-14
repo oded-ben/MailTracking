@@ -5,13 +5,24 @@
 // if anything here fails, Gmail just sends the mail untracked.
 
 (function () {
+  // Temporary — leave this on while we confirm it's working, flip to false once
+  // it's reliably showing up on the dashboard. Logs are prefixed [MailTracking].
+  const DEBUG = true;
+  const log = (...a) => DEBUG && console.log("[MailTracking]", ...a);
+
   let CONFIG = null;
   chrome.storage.sync.get(["mtConfig"], (res) => {
     CONFIG = res.mtConfig || null;
+    log("config loaded:", CONFIG);
   });
   chrome.storage.onChanged.addListener((changes) => {
-    if (changes.mtConfig) CONFIG = changes.mtConfig.newValue;
+    if (changes.mtConfig) {
+      CONFIG = changes.mtConfig.newValue;
+      log("config updated:", CONFIG);
+    }
   });
+
+  log("content script injected on", location.href);
 
   function uid() {
     return "gmail-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
@@ -26,8 +37,24 @@
     return (m && m[0]) || "Gmail";
   }
 
+  // Walk up from wherever the send happened until we find an ancestor whose
+  // subtree contains BOTH the subject box and the editable body — i.e. the
+  // compose window itself. Doesn't depend on Gmail's obfuscated container
+  // classes at all, only on the two selectors below (subjectbox / Am.Al.editable)
+  // which have been stable across Gmail for years.
   function findComposeRoot(node) {
-    return node.closest(".aDh, .aoI, [role='dialog']");
+    let el = node && node.nodeType === 1 ? node : node && node.parentElement;
+    for (let i = 0; i < 15 && el; i++) {
+      if (
+        el.querySelector &&
+        el.querySelector("input[name='subjectbox']") &&
+        el.querySelector("div.Am.Al.editable")
+      ) {
+        return el;
+      }
+      el = el.parentElement;
+    }
+    return null;
   }
 
   function fieldValue(root, selector) {
@@ -50,7 +77,10 @@
   }
 
   function handleSend(root) {
-    if (!CONFIG || !CONFIG.base || !CONFIG.key) return; // not configured yet
+    if (!CONFIG || !CONFIG.base || !CONFIG.key) {
+      log("NOT configured yet — open the extension popup and save Backend URL + Shared key");
+      return;
+    }
     const subject = fieldValue(root, "input[name='subjectbox']") || "(no subject)";
     const to = ["to", "cc", "bcc"]
       .map((n) => fieldValue(root, `textarea[name='${n}']`))
@@ -59,27 +89,28 @@
     const account = getAccountEmail();
     const id = uid();
 
-    injectPixel(root, id, CONFIG.base);
+    const injected = injectPixel(root, id, CONFIG.base);
+    log("pixel injected:", injected, "| subject:", subject, "| to:", to, "| account:", account, "| id:", id);
 
-    chrome.runtime.sendMessage({
-      type: "mt-register",
-      base: CONFIG.base,
-      key: CONFIG.key,
-      id,
-      subject,
-      to,
-      account,
-    });
+    chrome.runtime.sendMessage(
+      { type: "mt-register", base: CONFIG.base, key: CONFIG.key, id, subject, to, account },
+      (resp) => log("register response:", resp, chrome.runtime.lastError || "")
+    );
   }
 
   // Send button — capture phase, so the pixel lands before Gmail reads the body.
   document.addEventListener(
     "click",
     (e) => {
-      const btn = e.target.closest("div[role='button'][data-tooltip^='Send'], .T-I.J-J5-Ji.aoO");
+      const btn = e.target.closest(
+        "div[role='button'][data-tooltip^='Send'], div[role='button'][aria-label^='Send'], .T-I.J-J5-Ji.aoO"
+      );
       if (!btn) return;
+      log("Send button clicked:", btn);
       const root = findComposeRoot(btn);
+      log("compose root:", root);
       if (root) handleSend(root);
+      else log("could not find a compose root for this click — nothing tracked");
     },
     true
   );
@@ -89,8 +120,11 @@
     "keydown",
     (e) => {
       if (!(e.ctrlKey || e.metaKey) || e.key !== "Enter") return;
+      log("Ctrl/Cmd+Enter detected");
       const root = findComposeRoot(e.target);
+      log("compose root:", root);
       if (root) handleSend(root);
+      else log("could not find a compose root for this keypress — nothing tracked");
     },
     true
   );
