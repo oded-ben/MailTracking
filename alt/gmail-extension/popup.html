@@ -1,0 +1,26 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>MailTracking for Gmail</title>
+<style>
+  body { font: 13px system-ui, sans-serif; width: 260px; padding: 12px; margin: 0; }
+  h3 { margin: 0 0 8px; font-size: 14px; }
+  label { display: block; margin-top: 10px; font-weight: 600; }
+  input { width: 100%; box-sizing: border-box; padding: 6px; margin-top: 4px; font: inherit; }
+  button { margin-top: 14px; width: 100%; padding: 8px; cursor: pointer; font: inherit; }
+  .hint { font-size: 11px; color: #666; margin-top: 4px; }
+  .status { margin-top: 8px; font-size: 12px; color: #2a7; min-height: 14px; }
+</style>
+<h3>MailTracking for Gmail</h3>
+
+<label for="base">Backend URL</label>
+<input id="base" placeholder="https://mail-tracking-chi.vercel.app" />
+<div class="hint">Same domain your Outlook macro uses.</div>
+
+<label for="key">Shared key</label>
+<input id="key" placeholder="SHARED_SECRET" />
+<div class="hint">Same value as SHARED_SECRET / the Outlook macro's KEY.</div>
+
+<button id="save">Save</button>
+<div class="status" id="status"></div>
+
+<script src="popup.js"></script>

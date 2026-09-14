@@ -1,6 +1,8 @@
 # MailTracking
 
-A tiny self-hosted email open tracker for **Outlook Classic (Windows)**.
+A tiny self-hosted email open tracker for **Outlook Classic (Windows)**, with an
+optional Chrome extension that covers **Gmail's web UI** too — both report to the
+same backend and dashboard.
 
 You get an email when:
 
@@ -36,7 +38,13 @@ lib/tracker.js     shared: Redis client, config, Resend sender, sweep
 vercel.json        routes (/o, /register, /dashboard) + cron schedule
 ThisOutlookSession.vba   the Outlook Classic macro
 alt/cloudflare/    the same tool as a single Cloudflare Worker (not needed for Vercel)
+alt/gmail-extension/  Chrome extension covering Gmail's web UI — see its own README
 ```
+
+**Gmail:** if your Gmail account is added *inside* Outlook Classic, it's already
+tracked — the macro doesn't care which account sends the mail. If you compose
+directly at mail.google.com, install `alt/gmail-extension/` (unpacked, a couple
+of minutes) — details in that folder's README.
 
 ---
 
