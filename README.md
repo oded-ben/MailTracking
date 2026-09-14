@@ -110,10 +110,12 @@ plus a row on `/dashboard`.
 
 ## Cron frequency
 
-`vercel.json` asks for hourly (`0 * * * *`). Vercel **Hobby runs cron ~once per
-day** regardless — fine for a "not opened" nudge. **Pro** runs it hourly as
-written. Either way you can hit `/api/cron?k=<SHARED_SECRET>` manually, and the
-first-open / burst alerts are real-time (they fire from the pixel, not the cron).
+`vercel.json` runs the sweep once a day (`0 9 * * *`). **Vercel Hobby rejects the
+entire deploy** if a cron is scheduled more than once/day — this isn't a soft
+throttle, the build fails outright. Upgrade to Pro to run it hourly instead. Either
+way you can hit `/api/cron?k=<SHARED_SECRET>` manually any time, and the
+first-open / burst alerts are real-time regardless (they fire from the pixel, not
+the cron) — only the "not opened" nudge is affected by the schedule.
 
 ## Tuning
 
