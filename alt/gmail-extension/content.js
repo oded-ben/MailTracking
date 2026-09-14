@@ -5,9 +5,9 @@
 // if anything here fails, Gmail just sends the mail untracked.
 
 (function () {
-  // Temporary — leave this on while we confirm it's working, flip to false once
-  // it's reliably showing up on the dashboard. Logs are prefixed [MailTracking].
-  const DEBUG = true;
+  // Flip to true to see step-by-step logs (prefixed [MailTracking]) in the
+  // Gmail tab's console — useful if tracking ever silently stops working.
+  const DEBUG = false;
   const log = (...a) => DEBUG && console.log("[MailTracking]", ...a);
 
   let CONFIG = null;
