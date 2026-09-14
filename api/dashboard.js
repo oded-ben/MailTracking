@@ -26,8 +26,8 @@ export default async function handler(req, res) {
         ? `only scanner hits (${m.opens.length})`
         : "not opened";
       return `<tr><td>${fmt(m.createdAt, c.TZ)}</td><td>${esc(m.subject)}</td><td>${esc(
-        m.to
-      )}</td><td>${status}</td></tr>`;
+        m.account || "-"
+      )}</td><td>${esc(m.to)}</td><td>${status}</td></tr>`;
     })
     .join("");
 
@@ -41,6 +41,6 @@ export default async function handler(req, res) {
       `td,th{border:1px solid #ccc;padding:6px 10px;text-align:left;vertical-align:top}` +
       `th{background:#f4f4f4}</style>` +
       `<h2>Tracked emails (${rows.length})</h2>` +
-      `<table><tr><th>Sent</th><th>Subject</th><th>To</th><th>Status</th></tr>${body}</table>`
+      `<table><tr><th>Sent</th><th>Subject</th><th>From</th><th>To</th><th>Status</th></tr>${body}</table>`
   );
 }

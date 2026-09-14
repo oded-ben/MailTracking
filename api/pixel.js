@@ -1,5 +1,5 @@
 // GET /o/<id>.gif  — logs the open, fires alerts, always returns the pixel.
-import { redis, GIF, TTL, cfg, sendMail, fmt } from "../lib/tracker.js";
+import { redis, GIF, TTL, cfg, sendMail, fmt, header } from "../lib/tracker.js";
 
 export default async function handler(req, res) {
   const id = String(req.query.id || "").replace(/\.gif$/i, "");
@@ -46,7 +46,7 @@ async function track(id) {
     alerts.push({
       subject: `Opened: ${m.subject}`,
       text:
-        `"${m.subject}"\nto: ${m.to}\n\n` +
+        header(m) +
         `First opened ${fmt(now, c.TZ)}\n` +
         `= ${Math.round(sinceSend / 60000)} min after you sent it.`,
     });
@@ -58,7 +58,7 @@ async function track(id) {
       alerts.push({
         subject: `Opened ${recent}x: ${m.subject}`,
         text:
-          `"${m.subject}"\nto: ${m.to}\n\n` +
+          header(m) +
           `${recent} opens in the last ${c.BURST_WINDOW_MIN} min (total ${human.length}).\n` +
           `Could be active re-reading or forwarding — or a mail scanner in a loop.`,
       });
@@ -66,7 +66,7 @@ async function track(id) {
     if (c.NOTIFY_EVERY_OPEN) {
       alerts.push({
         subject: `Re-opened (#${human.length}): ${m.subject}`,
-        text: `"${m.subject}"\nto: ${m.to}\n\nOpened again ${fmt(now, c.TZ)}.`,
+        text: header(m) + `Opened again ${fmt(now, c.TZ)}.`,
       });
     }
   }

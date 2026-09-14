@@ -20,6 +20,7 @@ export default async function handler(req, res) {
     id: b.id,
     subject: b.subject || "(no subject)",
     to: b.to || "",
+    account: b.account || "",
     createdAt: Date.now(),
     firstOpenAt: 0,
     opens: [],

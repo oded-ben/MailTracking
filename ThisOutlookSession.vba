@@ -36,6 +36,15 @@ Private Sub Application_ItemSend(ByVal Item As Object, Cancel As Boolean)
         recips = recips & r.Name & " <" & r.Address & ">; "
     Next
 
+    ' which of your accounts this is being sent from (works whether you have 1 or many)
+    Dim acctName As String
+    acctName = "(default account)"
+    Dim acct As Outlook.Account
+    Set acct = mail.SendUsingAccount
+    If Not acct Is Nothing Then
+        If Len(acct.DisplayName) > 0 Then acctName = acct.DisplayName
+    End If
+
     ' --- tell the Worker about this message (best effort; a failure won't block the send) ---
     Dim http As Object
     Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
@@ -43,7 +52,8 @@ Private Sub Application_ItemSend(ByVal Item As Object, Cancel As Boolean)
     http.Open "POST", BASE & "/register", False
     http.setRequestHeader "Content-Type", "application/json"
     http.setRequestHeader "X-Track-Key", KEY
-    http.send "{""id"":""" & id & """,""subject"":" & J(mail.Subject) & ",""to"":" & J(recips) & "}"
+    http.send "{""id"":""" & id & """,""subject"":" & J(mail.Subject) & ",""to"":" & J(recips) & _
+               ",""account"":" & J(acctName) & "}"
 
     ' --- inject the invisible pixel ---
     Dim px As String
