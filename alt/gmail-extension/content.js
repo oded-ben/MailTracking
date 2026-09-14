@@ -82,7 +82,9 @@
     img.src = `${base}/o/${encodeURIComponent(id)}.gif`;
     img.width = 1;
     img.height = 1;
-    img.alt = "";
+    // A single space, not "" — an empty alt makes Gmail's one-line inbox
+    // preview fall back to showing the raw image URL in <...> brackets.
+    img.alt = " ";
     img.style.cssText = "display:none !important;opacity:0;width:1px;height:1px;overflow:hidden;";
     body.appendChild(img);
     return true;

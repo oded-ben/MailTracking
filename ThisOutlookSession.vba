@@ -56,8 +56,10 @@ Private Sub Application_ItemSend(ByVal Item As Object, Cancel As Boolean)
                ",""account"":" & J(acctName) & "}"
 
     ' --- inject the invisible pixel ---
+    ' alt is a single space, not empty - some clients' preview/snippet text
+    ' falls back to showing the raw image URL when alt="" is empty.
     Dim px As String
-    px = "<img src=""" & BASE & "/o/" & id & ".gif"" alt="""" width=""1"" height=""1"" " & _
+    px = "<img src=""" & BASE & "/o/" & id & ".gif"" alt="" "" width=""1"" height=""1"" " & _
          "style=""display:none !important;opacity:0;width:1px;height:1px;overflow:hidden;"" />"
 
     Dim hb As String
