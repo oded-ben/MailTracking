@@ -35,6 +35,7 @@ export default async function handler(req, res) {
   res.status(200).send(
     `<!doctype html><meta charset=utf-8>` +
       `<meta name=viewport content="width=device-width,initial-scale=1"><title>Email tracker</title>` +
+      `<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48dGV4dCB5PSIwLjllbSIgZm9udC1zaXplPSI5MCI+8J+TpzwvdGV4dD48L3N2Zz4=">` +
       `<style>body{font:14px/1.4 system-ui,sans-serif;margin:1.5rem;color:#111}` +
       `table{border-collapse:collapse;width:100%}` +
       `td,th{border:1px solid #ccc;padding:6px 10px;text-align:left;vertical-align:top}` +
