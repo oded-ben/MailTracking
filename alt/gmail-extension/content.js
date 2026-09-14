@@ -63,6 +63,18 @@
     return el.value != null ? el.value : el.textContent || "";
   }
 
+  // Gmail's hidden to/cc/bcc textareas aren't reliably kept in sync with the
+  // chip-based recipient UI. Fall back to reading the chips themselves —
+  // Gmail puts the address in an `email` attribute on each recipient chip.
+  function recipientsFromChips(root) {
+    const seen = new Set();
+    root.querySelectorAll("[email]").forEach((el) => {
+      const addr = el.getAttribute("email");
+      if (addr) seen.add(addr);
+    });
+    return Array.from(seen).join("; ");
+  }
+
   function injectPixel(root, id, base) {
     const body = root.querySelector("div.Am.Al.editable");
     if (!body) return false;
@@ -82,10 +94,11 @@
       return;
     }
     const subject = fieldValue(root, "input[name='subjectbox']") || "(no subject)";
-    const to = ["to", "cc", "bcc"]
+    let to = ["to", "cc", "bcc"]
       .map((n) => fieldValue(root, `textarea[name='${n}']`))
       .filter(Boolean)
       .join("; ");
+    if (!to) to = recipientsFromChips(root);
     const account = getAccountEmail();
     const id = uid();
 
