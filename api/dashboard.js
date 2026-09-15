@@ -59,9 +59,11 @@ export default async function handler(req, res) {
         tr.snoozed{opacity:.55}
         button.snooze{font:inherit;padding:3px 10px;cursor:pointer}
         #empty{display:none;color:#666;padding:12px 0}
+        .controls a{white-space:nowrap;color:#0645ad}
       </style>` +
       `<h2>Tracked emails (<span id="count">${rows.length}</span>)</h2>` +
-      `<div class="controls"><input type="search" id="q" placeholder="Search subject / account / recipient / status…"></div>` +
+      `<div class="controls"><input type="search" id="q" placeholder="Search subject / account / recipient / status…">` +
+      `<a href="/api/export?k=${encodeURIComponent(key)}">Export CSV</a></div>` +
       `<table id="tbl"><thead><tr>` +
       `<th data-k="sent">Sent</th><th data-k="text">Subject</th><th data-k="text">From</th>` +
       `<th data-k="text">To</th><th data-k="text">Status</th><th></th>` +

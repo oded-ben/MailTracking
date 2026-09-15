@@ -84,6 +84,7 @@ The repo is already on GitHub, so use the Git integration:
    | `IGNORE_FIRST_SECONDS` | default `15` | no |
    | `NOTIFY_EVERY_OPEN` | `1` = email on every re-open (noisy) | no |
    | `DIGEST_MODE` | `1` = one daily summary email instead of instant alerts (default `0`) | no |
+   | `NOTIFY_SENDER_TOO` | `1` = also cc the sending account on instant alerts (default `0`) | no |
 
 5. **Deployments → Redeploy** so the new env vars take effect.
 6. Note your domain, e.g. `https://mailtracking-xxxx.vercel.app`.
@@ -139,7 +140,7 @@ last digest plus anything newly crossing the not-opened threshold. Quiet days
 (nothing to report) send nothing. Switching modes takes effect immediately — it
 only changes how already-detected events get delivered, not detection itself.
 
-## Dashboard: search, sort, snooze
+## Dashboard: search, sort, snooze, export
 
 `/dashboard?k=<SHARED_SECRET>` now has:
 - a **search box** that filters rows by subject/account/recipient/status as you type,
@@ -148,6 +149,24 @@ only changes how already-detected events get delivered, not detection itself.
   that one message — use it for cold outreach you don't expect a reply to, so it
   stops nagging you without lying about whether it was actually opened. Doesn't
   affect first-open/burst alerts, which still fire normally if it is opened later.
+- an **Export CSV** link (`/api/export?k=<SHARED_SECRET>`) that downloads every
+  tracked message as a CSV: sent time, subject, from, to, open count, first-open
+  time, snoozed, status.
+
+## Notifying the sender's own address
+
+By default every alert goes to the single `NOTIFY_TO` address, regardless of
+which of your accounts (Outlook or Gmail) sent the tracked email. Set
+`NOTIFY_SENDER_TOO=1` to also cc the *sending* account on instant alerts (not
+digest mode - see below) whenever that account looks like a real email address.
+
+**Read this before enabling it:** Resend's free `onboarding@resend.dev` sender
+can only deliver to the one address your Resend account was signed up with.
+If your Outlook and Gmail accounts use different addresses, alerts to whichever
+one *isn't* your Resend signup address will be silently dropped by Resend, not
+by this code - `NOTIFY_TO` will still get every alert either way, so nothing is
+lost, but the second address won't reliably receive anything until you verify a
+real sending domain in Resend (removes the one-recipient restriction entirely).
   Click **Un-snooze** to undo.
 
 ## What this cannot do (true of every pixel tracker, paid ones included)

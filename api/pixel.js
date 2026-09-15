@@ -72,5 +72,5 @@ async function track(id) {
   }
 
   await r.set(key, m, { ex: TTL });
-  for (const a of alerts) await notify(a.subject, a.text);
+  for (const a of alerts) await notify(a.subject, a.text, [m.account]);
 }
