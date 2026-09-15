@@ -83,6 +83,7 @@ The repo is already on GitHub, so use the Git integration:
    | `BURST_WINDOW_MIN` / `BURST_COUNT` | default `30` / `3` | no |
    | `IGNORE_FIRST_SECONDS` | default `15` | no |
    | `NOTIFY_EVERY_OPEN` | `1` = email on every re-open (noisy) | no |
+   | `DIGEST_MODE` | `1` = one daily summary email instead of instant alerts (default `0`) | no |
 
 5. **Deployments → Redeploy** so the new env vars take effect.
 6. Note your domain, e.g. `https://mailtracking-xxxx.vercel.app`.
@@ -128,6 +129,26 @@ the cron) — only the "not opened" nudge is affected by the schedule.
 ## Tuning
 
 Change any env var in Vercel → **Settings → Environment Variables**, then redeploy.
+
+## Digest mode
+
+By default every first-open, burst, and not-opened event emails you the moment it
+happens. Set `DIGEST_MODE=1` to switch to **one email a day** instead, sent from
+the same daily cron: a single message listing everything that opened since the
+last digest plus anything newly crossing the not-opened threshold. Quiet days
+(nothing to report) send nothing. Switching modes takes effect immediately — it
+only changes how already-detected events get delivered, not detection itself.
+
+## Dashboard: search, sort, snooze
+
+`/dashboard?k=<SHARED_SECRET>` now has:
+- a **search box** that filters rows by subject/account/recipient/status as you type,
+- **sortable columns** (click any header, click again to reverse),
+- a **Snooze** button per row that permanently stops the "not opened" nudge for
+  that one message — use it for cold outreach you don't expect a reply to, so it
+  stops nagging you without lying about whether it was actually opened. Doesn't
+  affect first-open/burst alerts, which still fire normally if it is opened later.
+  Click **Un-snooze** to undo.
 
 ## What this cannot do (true of every pixel tracker, paid ones included)
 

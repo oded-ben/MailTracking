@@ -1,5 +1,5 @@
 // GET /o/<id>.gif  — logs the open, fires alerts, always returns the pixel.
-import { redis, GIF, TTL, cfg, sendMail, fmt, header } from "../lib/tracker.js";
+import { redis, GIF, TTL, cfg, notify, fmt, header } from "../lib/tracker.js";
 
 export default async function handler(req, res) {
   const id = String(req.query.id || "").replace(/\.gif$/i, "");
@@ -72,5 +72,5 @@ async function track(id) {
   }
 
   await r.set(key, m, { ex: TTL });
-  for (const a of alerts) await sendMail(a.subject, a.text);
+  for (const a of alerts) await notify(a.subject, a.text);
 }
