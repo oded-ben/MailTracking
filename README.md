@@ -14,30 +14,33 @@ No subscription. Runs on Vercel + Upstash + Resend free tiers.
 
 ## How it works
 
-1. An Outlook VBA macro runs on every send: it generates a unique ID, POSTs the
-   subject + recipients to `/register`, and drops a 1x1 invisible image into the
-   HTML body pointing at `/o/<id>.gif`.
+1. An Outlook VBA macro (or the Gmail extension) runs on every send: it generates
+   a unique ID, POSTs the subject + recipients + sending account to `/register`,
+   and drops a 1x1 invisible image into the HTML body pointing at `/o/<id>.gif`.
 2. When the recipient's mail client loads that image, the Vercel function logs the
    hit to Upstash Redis and emails you via Resend.
-3. A Vercel cron calls `/api/cron` to nag about messages that were never opened.
+3. A Vercel cron calls `/api/cron` to nag about messages that were never opened
+   (or, in digest mode, to send one daily summary — see below).
 
 ```
-Outlook (macro) ──register──▶ Vercel /register ──▶ Upstash Redis
-      │                                              ▲
-      └── pixel in email ──▶ Vercel /o/<id>.gif ─────┘──▶ Resend ──▶ your inbox
+Outlook/Gmail ──register──▶ Vercel /register ──▶ Upstash Redis
+      │                                             ▲
+      └── pixel in email ──▶ Vercel /o/<id>.gif ────┘──▶ Resend ──▶ your inbox
 ```
 
 ## Project layout
 
 ```
 api/pixel.js       GET  /o/<id>.gif   log open + alerts, return the pixel
-api/register.js    POST /register     called by the Outlook macro
-api/dashboard.js   GET  /dashboard    table of every tracked email + status
-api/cron.js        GET  /api/cron     "not opened" sweep (Vercel cron)
-lib/tracker.js     shared: Redis client, config, Resend sender, sweep
+api/register.js    POST /register     called by the Outlook macro / Gmail extension
+api/dashboard.js   GET  /dashboard    searchable/sortable table, snooze, CSV export
+api/snooze.js      POST /api/snooze   stop the "not opened" nudge for one message
+api/export.js      GET  /api/export   every tracked message as a CSV download
+api/cron.js        GET  /api/cron     "not opened" sweep / digest send (Vercel cron)
+lib/tracker.js     shared: Redis client, config, Resend sender, sweep, digest
 vercel.json        routes (/o, /register, /dashboard) + cron schedule
 ThisOutlookSession.vba   the Outlook Classic macro
-alt/cloudflare/    the same tool as a single Cloudflare Worker (not needed for Vercel)
+alt/cloudflare/       the same tool as a single Cloudflare Worker (not needed for Vercel)
 alt/gmail-extension/  Chrome extension covering Gmail's web UI — see its own README
 ```
 
@@ -73,7 +76,7 @@ The repo is already on GitHub, so use the Git integration:
 
    | name | value | required |
    |---|---|---|
-   | `SHARED_SECRET` | long random string (also goes in the Outlook macro) | yes |
+   | `SHARED_SECRET` | long random string (also goes in the Outlook macro / Gmail extension) | yes |
    | `RESEND_API_KEY` | from step 1 | yes |
    | `NOTIFY_TO` | where alerts are sent | yes |
    | `CRON_SECRET` | long random string (Vercel sends it to `/api/cron`) | recommended |
@@ -125,7 +128,8 @@ entire deploy** if a cron is scheduled more than once/day — this isn't a soft
 throttle, the build fails outright. Upgrade to Pro to run it hourly instead. Either
 way you can hit `/api/cron?k=<SHARED_SECRET>` manually any time, and the
 first-open / burst alerts are real-time regardless (they fire from the pixel, not
-the cron) — only the "not opened" nudge is affected by the schedule.
+the cron) — only the "not opened" nudge (and digest sending) is affected by the
+schedule.
 
 ## Tuning
 
@@ -140,34 +144,48 @@ last digest plus anything newly crossing the not-opened threshold. Quiet days
 (nothing to report) send nothing. Switching modes takes effect immediately — it
 only changes how already-detected events get delivered, not detection itself.
 
+## Notifying the sender's own address
+
+By default every alert goes to the single `NOTIFY_TO` address, regardless of
+which of your accounts (Outlook or Gmail) sent the tracked email. Set
+`NOTIFY_SENDER_TOO=1` to also cc the *sending* account on instant alerts (not
+digest mode) whenever that account looks like a real email address.
+
+**Read this before enabling it:** Resend's free `onboarding@resend.dev` sender
+can only deliver to the one address your Resend account was signed up with.
+If your Outlook and Gmail accounts use different addresses, alerts to whichever
+one *isn't* your Resend signup address will be silently dropped by Resend, not
+by this code — `NOTIFY_TO` will still get every alert either way, so nothing is
+lost, but the second address won't reliably receive anything until you verify a
+real sending domain in Resend (removes the one-recipient restriction entirely).
+
 ## Dashboard: search, sort, snooze, export
 
-`/dashboard?k=<SHARED_SECRET>` now has:
+`/dashboard?k=<SHARED_SECRET>` has:
+- a **summary line** — tracked / opened / not opened / snoozed counts, at a glance,
 - a **search box** that filters rows by subject/account/recipient/status as you type,
 - **sortable columns** (click any header, click again to reverse),
 - a **Snooze** button per row that permanently stops the "not opened" nudge for
   that one message — use it for cold outreach you don't expect a reply to, so it
   stops nagging you without lying about whether it was actually opened. Doesn't
   affect first-open/burst alerts, which still fire normally if it is opened later.
+  Click **Un-snooze** to undo.
 - an **Export CSV** link (`/api/export?k=<SHARED_SECRET>`) that downloads every
   tracked message as a CSV: sent time, subject, from, to, open count, first-open
   time, snoozed, status.
+- the table **scrolls horizontally** on narrow screens instead of breaking layout.
 
-## Notifying the sender's own address
+## Alert email details
 
-By default every alert goes to the single `NOTIFY_TO` address, regardless of
-which of your accounts (Outlook or Gmail) sent the tracked email. Set
-`NOTIFY_SENDER_TOO=1` to also cc the *sending* account on instant alerts (not
-digest mode - see below) whenever that account looks like a real email address.
-
-**Read this before enabling it:** Resend's free `onboarding@resend.dev` sender
-can only deliver to the one address your Resend account was signed up with.
-If your Outlook and Gmail accounts use different addresses, alerts to whichever
-one *isn't* your Resend signup address will be silently dropped by Resend, not
-by this code - `NOTIFY_TO` will still get every alert either way, so nothing is
-lost, but the second address won't reliably receive anything until you verify a
-real sending domain in Resend (removes the one-recipient restriction entirely).
-  Click **Un-snooze** to undo.
+- Every alert subject gets a consistent **`[MailTracking] `** prefix (including
+  digests), so it's a one-line filter/label rule in your inbox.
+- **Bcc recipients are never logged.** Both the Outlook macro and the Gmail
+  extension exclude Bcc addresses when building the recipient list that gets
+  stored and shown — the whole point of Bcc is that recipients don't see each
+  other, so it shouldn't end up sitting in a log column either. (One narrow
+  exception: the Gmail extension's fallback recipient-detection path, used only
+  when Gmail hasn't synced its hidden form fields yet, can't reliably isolate
+  Bcc chips and may include them in that specific fallback case.)
 
 ## What this cannot do (true of every pixel tracker, paid ones included)
 
@@ -180,6 +198,11 @@ real sending domain in Resend (removes the one-recipient restriction entirely).
 - **Gmail recipients**: Google caches the proxied pixel, so re-opens undercount.
   "Opened many times" is most reliable when the recipient is on Outlook/Apple Mail.
 - **Plain-text emails** can't carry a pixel (the macro upgrades them to HTML).
+- **Multi-recipient sends are tracked in aggregate, not per-recipient** — with
+  one shared pixel per email, "opened" means *someone* on the recipient list
+  opened it, not which one. True per-recipient attribution would require
+  splitting the message into individual sends, which this project deliberately
+  doesn't do.
 - The recipient is **not told** they're tracked — same as every commercial tracker.
   Consider your local rules / company policy.
 
