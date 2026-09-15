@@ -19,10 +19,15 @@ export default async function handler(req, res) {
   const esc = (s) =>
     String(s).replace(/[&<>]/g, (x) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[x]));
 
+  let openedCount = 0;
+  let snoozedCount = 0;
+
   const body = rows
     .map((m) => {
       const human = (m.opens || []).filter((o) => !o.bot);
       const isSnoozed = !!m.snoozed && !human.length;
+      if (human.length) openedCount++;
+      if (isSnoozed) snoozedCount++;
       const status = human.length
         ? `opened ${human.length}x &mdash; first ${fmt(m.firstOpenAt, c.TZ)}`
         : (m.opens || []).length
@@ -60,14 +65,19 @@ export default async function handler(req, res) {
         button.snooze{font:inherit;padding:3px 10px;cursor:pointer}
         #empty{display:none;color:#666;padding:12px 0}
         .controls a{white-space:nowrap;color:#0645ad}
+        .summary{color:#444;margin:0 0 10px}
+        .table-wrap{overflow-x:auto}
+        table{min-width:640px}
       </style>` +
       `<h2>Tracked emails (<span id="count">${rows.length}</span>)</h2>` +
+      `<div class="summary">${rows.length} tracked &middot; ${openedCount} opened &middot; ` +
+      `${rows.length - openedCount} not opened &middot; ${snoozedCount} snoozed</div>` +
       `<div class="controls"><input type="search" id="q" placeholder="Search subject / account / recipient / status…">` +
       `<a href="/api/export?k=${encodeURIComponent(key)}">Export CSV</a></div>` +
-      `<table id="tbl"><thead><tr>` +
+      `<div class="table-wrap"><table id="tbl"><thead><tr>` +
       `<th data-k="sent">Sent</th><th data-k="text">Subject</th><th data-k="text">From</th>` +
       `<th data-k="text">To</th><th data-k="text">Status</th><th></th>` +
-      `</tr></thead><tbody>${body}</tbody></table>` +
+      `</tr></thead><tbody>${body}</tbody></table></div>` +
       `<div id="empty">No rows match your search.</div>` +
       `<script>${clientScript(key)}</script>`
   );

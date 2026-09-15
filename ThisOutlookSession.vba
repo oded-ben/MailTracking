@@ -31,9 +31,13 @@ Private Sub Application_ItemSend(ByVal Item As Object, Cancel As Boolean)
     Dim id As String
     id = Format$(Now, "yyyymmdd-hhnnss") & "-" & Right$("000000" & CStr(Int(Rnd() * 1000000#)), 6)
 
+    ' Bcc intentionally excluded - the point of Bcc is that recipients don't
+    ' see each other, so it shouldn't end up sitting in a log column either.
     Dim recips As String, r As Outlook.Recipient
     For Each r In mail.Recipients
-        recips = recips & r.Name & " <" & r.Address & ">; "
+        If r.Type <> olBCC Then
+            recips = recips & r.Name & " <" & r.Address & ">; "
+        End If
     Next
 
     ' which of your accounts this is being sent from (works whether you have 1 or many)

@@ -96,10 +96,15 @@
       return;
     }
     const subject = fieldValue(root, "input[name='subjectbox']") || "(no subject)";
-    let to = ["to", "cc", "bcc"]
+    // Bcc intentionally excluded - the point of Bcc is that recipients don't
+    // see each other, so it shouldn't end up sitting in a log column either.
+    let to = ["to", "cc"]
       .map((n) => fieldValue(root, `textarea[name='${n}']`))
       .filter(Boolean)
       .join("; ");
+    // Fallback when Gmail hasn't synced the textareas yet (see recipientsFromChips) -
+    // can't reliably isolate the Bcc row's chips here, so Bcc may leak through
+    // in this fallback path specifically.
     if (!to) to = recipientsFromChips(root);
     const account = getAccountEmail();
     const id = uid();
