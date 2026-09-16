@@ -12,6 +12,15 @@ You get an email when:
 
 No subscription. Runs on Vercel + Upstash + Resend free tiers.
 
+> **Outlook Classic only — not "New Outlook."** Microsoft's modern
+> WebView2-based "New Outlook for Windows" has no VBA support at all; the
+> macro simply won't exist there (Alt+F11 does nothing) and tracking silently
+> stops with no error if you get switched over. Check the "Try the new
+> Outlook" toggle in the top-right of the Outlook window — if it's on, switch
+> back to Classic ("Go back to the classic Outlook") for this to work. See
+> [New Outlook compatibility](#new-outlook-compatibility-evaluation) below for
+> what supporting it for real would take.
+
 ## How it works
 
 1. An Outlook VBA macro (or the Gmail extension) runs on every send: it generates
@@ -186,6 +195,62 @@ real sending domain in Resend (removes the one-recipient restriction entirely).
   exception: the Gmail extension's fallback recipient-detection path, used only
   when Gmail hasn't synced its hidden form fields yet, can't reliably isolate
   Bcc chips and may include them in that specific fallback case.)
+
+## New Outlook compatibility evaluation
+
+Status: **evaluated, not built.** Notes below for whenever it's worth doing.
+
+**Why VBA doesn't work there:** New Outlook is a WebView2 wrapper around the
+same web app that runs Outlook on the web (OWA) — a different architecture
+from Classic, with no VBA project, no COM add-ins, and none of the classic
+Object Model events `Application_ItemSend` relies on. Microsoft has been clear
+this isn't coming back for New Outlook; it's not a gap that gets closed later.
+
+**The one supported path in: Office Add-ins with the `OnMessageSend` event.**
+Microsoft's modern add-in platform ("Smart Alerts" / event-based activation)
+lets an add-in register a JS handler that runs when the user hits Send, before
+the message goes out — the same job `Application_ItemSend` does, just through
+a completely different framework (`Office.js`, the Outlook Mailbox API,
+async/Promise-based instead of VBA's synchronous calls). It can read/modify
+the subject, body, and recipients, then call `event.completed({allowEvent:
+true})` to let the send proceed. In principle this is a real replacement for
+the macro, built once for this new framework.
+
+**What building it would actually take:**
+- An Office Add-in manifest (XML or the newer unified JSON format) declaring
+  the `OnMessageSend` launch event, plus a small JS file implementing the
+  handler — a new artifact, not a tweak to the existing macro.
+- Somewhere to host that manifest + JS. Vercel already serves this project's
+  backend over HTTPS, so it could live right alongside it (e.g. `/addin/...`)
+  with no new infrastructure.
+- **Sideloading**, i.e. installing it for your mailbox: via OWA → Settings →
+  General → **Manage add-ins** → **My add-ins** → **Add a custom add-in**.
+  One real bonus here — this same add-in would then also cover **Outlook on
+  the web and Outlook Mobile**, not just New Outlook desktop, since they all
+  share this add-in platform. That's more coverage than the current
+  Classic-only macro for the same build effort.
+
+**The open question that gates all of this:** Office Add-ins require an
+Exchange-backed mailbox — Exchange Online / Microsoft 365, or a personal
+Outlook.com account. They do **not** work on a plain IMAP/POP account added
+to Outlook. If `oded@humalign.ai` is hosted on Microsoft 365/Exchange, this is
+viable. If it's actually added to Outlook as generic IMAP (e.g. a domain
+running on Google Workspace or another provider, connected via IMAP/SMTP
+rather than true Exchange), Office Add-ins won't load for it at all, and this
+path is closed regardless of how much of it gets built. **Worth confirming
+the account type before investing further.**
+
+**Known risk, not just theoretical:** `OnMessageSend` handlers have
+documented, reported quirks around async operations (network calls, body
+edits) reliably completing before Outlook proceeds with the send. Expect a
+real debugging cycle here — likely comparable to the Gmail extension's DOM/
+selector iteration this session, just in the async-timing domain instead.
+
+**Rough scope:** comparable to (or larger than) the Gmail extension build —
+a new manifest, a new runtime environment, a new class of bugs to work
+through. The upside is it reuses the existing `/register` and `/o/<id>.gif`
+endpoints unchanged; only the "how the pixel gets in and how send gets
+hooked" layer is new.
 
 ## What this cannot do (true of every pixel tracker, paid ones included)
 
