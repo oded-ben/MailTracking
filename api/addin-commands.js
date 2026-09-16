@@ -11,7 +11,10 @@
 // /register entries. It cannot read the dashboard, export data, or
 // snooze/unsnooze anything; those still require SHARED_SECRET, which is
 // never embedded in anything publicly servable.
+import { securityHeaders } from "../lib/tracker.js";
+
 export default function handler(req, res) {
+  securityHeaders(res);
   const proto = req.headers["x-forwarded-proto"] || "https";
   const base = `${proto}://${req.headers.host}`;
   const key = process.env.ADDIN_KEY || "";

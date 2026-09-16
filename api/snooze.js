@@ -1,11 +1,14 @@
 // POST /api/snooze  — dashboard button: stop (or resume) the "not opened"
 // nudge for one message. Body: { id, snoozed }.
-import { setSnoozed } from "../lib/tracker.js";
+import { setSnoozed, safeEqual, securityHeaders } from "../lib/tracker.js";
 
 export default async function handler(req, res) {
+  securityHeaders(res);
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
-  if ((req.headers["x-track-key"] || "") !== process.env.SHARED_SECRET)
+  if (!safeEqual(req.headers["x-track-key"] || "", process.env.SHARED_SECRET || "")) {
+    console.warn("[snooze] rejected: invalid key", { ip: req.headers["x-forwarded-for"] });
     return res.status(403).json({ error: "forbidden" });
+  }
 
   let b = req.body;
   if (typeof b === "string") {

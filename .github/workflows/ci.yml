@@ -17,13 +17,24 @@ on:
   pull_request:
     branches: [main]
 
+# Least privilege: this workflow only reads the repo and calls Vercel's own
+# API with its own token - it never needs to write to the repo, open PRs, or
+# touch any other GitHub API. Explicit, rather than relying on the
+# organization/repo default GITHUB_TOKEN permission (which can be broader).
+permissions:
+  contents: read
+
 jobs:
   syntax-and-json:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      # Actions pinned to a full commit SHA, not a mutable version tag - a
+      # tag can be moved (accidentally or via a compromised maintainer
+      # account, as happened to tj-actions/changed-files in 2025); a commit
+      # SHA can't be silently swapped out from under a workflow.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 20
 
@@ -44,9 +55,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: syntax-and-json
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 20
 
@@ -67,7 +78,11 @@ jobs:
 
       - name: Install Vercel CLI
         if: steps.check.outputs.available == 'true'
-        run: npm install --global vercel@latest
+        # Pinned, not @latest - an unpinned CI dependency means every run can
+        # silently pull a different (and unreviewed) version of a tool with
+        # broad access (VERCEL_TOKEN). Bump deliberately when there's a
+        # reason to, not automatically on every run.
+        run: npm install --global vercel@59.19.0
 
       - name: Pull Vercel project settings
         if: steps.check.outputs.available == 'true'

@@ -1,14 +1,25 @@
 // GET /api/export?k=SHARED_SECRET  — every tracked message as a CSV download.
-import { redis, cfg, fmt } from "../lib/tracker.js";
+import { redis, cfg, fmt, safeEqual, securityHeaders } from "../lib/tracker.js";
 
+// subject/account/to all originate from /register, which anyone holding
+// ADDIN_KEY can call. Excel/Sheets treats a field starting with =, +, -, @,
+// tab, or CR as a formula when the CSV is opened (CSV/formula injection,
+// OWASP-documented) - a crafted subject like `=HYPERLINK(...)` would execute
+// as a formula for whoever opens the export. Prefixing with a single quote
+// is the standard mitigation: spreadsheet apps then treat it as literal text.
 function csvField(v) {
-  const s = String(v ?? "");
+  let s = String(v ?? "");
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 export default async function handler(req, res) {
-  if (String(req.query.k || "") !== process.env.SHARED_SECRET)
+  const key = String(req.query.k || "");
+  securityHeaders(res, { noStore: true });
+  if (!safeEqual(key, process.env.SHARED_SECRET || "")) {
+    console.warn("[export] rejected: invalid key", { ip: req.headers["x-forwarded-for"] });
     return res.status(403).send("forbidden");
+  }
   const c = cfg();
 
   const r = redis();

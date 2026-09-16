@@ -1,11 +1,15 @@
 // GET /dashboard?k=SHARED_SECRET  — searchable/sortable table of every
 // tracked email, with a per-row snooze button that stops the "not opened"
 // nudge for messages you don't expect (or care about) a reply to.
-import { redis, cfg, fmt } from "../lib/tracker.js";
+import { redis, cfg, fmt, safeEqual, securityHeaders } from "../lib/tracker.js";
 
 export default async function handler(req, res) {
   const key = String(req.query.k || "");
-  if (key !== process.env.SHARED_SECRET) return res.status(403).send("forbidden");
+  securityHeaders(res, { noStore: true });
+  if (!safeEqual(key, process.env.SHARED_SECRET || "")) {
+    console.warn("[dashboard] rejected: invalid key", { ip: req.headers["x-forwarded-for"] });
+    return res.status(403).send("forbidden");
+  }
   const c = cfg();
 
   const r = redis();
@@ -16,8 +20,17 @@ export default async function handler(req, res) {
     if (m) rows.push(m);
   }
 
+  // Escapes all five HTML-significant characters, not just &<> - this value
+  // is interpolated into both element content AND attribute values (e.g.
+  // data-id="${esc(m.id)}"), and m.id/m.subject/m.to/m.account all originate
+  // from /register, which anyone holding ADDIN_KEY can call. Without quote
+  // escaping, a crafted id like `x" onmouseover="..." could break out of the
+  // attribute and inject arbitrary HTML attributes into this page.
   const esc = (s) =>
-    String(s).replace(/[&<>]/g, (x) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[x]));
+    String(s).replace(
+      /[&<>"']/g,
+      (x) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[x])
+    );
 
   let openedCount = 0;
   let snoozedCount = 0;
