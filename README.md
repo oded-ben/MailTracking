@@ -46,9 +46,11 @@ api/dashboard.js   GET  /dashboard    searchable/sortable table, snooze, CSV exp
 api/snooze.js      POST /api/snooze   stop the "not opened" nudge for one message
 api/export.js      GET  /api/export   every tracked message as a CSV download
 api/cron.js        GET  /api/cron     "not opened" sweep / digest send (Vercel cron)
+api/addin-commands.js  GET /outlook-addin/commands.js   Office Add-in handler (generated per-request)
 lib/tracker.js     shared: Redis client, config, Resend sender, sweep, digest
-vercel.json        routes (/o, /register, /dashboard) + cron schedule
+vercel.json        routes (/o, /register, /dashboard, /outlook-addin/commands.js) + cron
 ThisOutlookSession.vba   the Outlook Classic macro
+public/outlook-addin/  Office Add-in manifest + icons — see "Office Add-in" below
 alt/cloudflare/       the same tool as a single Cloudflare Worker (not needed for Vercel)
 alt/gmail-extension/  Chrome extension covering Gmail's web UI — see its own README
 ```
@@ -97,6 +99,7 @@ The repo is already on GitHub, so use the Git integration:
    | `NOTIFY_EVERY_OPEN` | `1` = email on every re-open (noisy) | no |
    | `DIGEST_MODE` | `1` = one daily summary email instead of instant alerts (default `0`) | no |
    | `NOTIFY_SENDER_TOO` | `1` = also cc the sending account on instant alerts (default `0`) | no |
+   | `ADDIN_KEY` | long random string, separate from `SHARED_SECRET` — only needed for the Office Add-in (New Outlook/web/Mac/Mobile) | only if using the Office Add-in |
 
 5. **Deployments → Redeploy** so the new env vars take effect.
 6. Note your domain, e.g. `https://mailtracking-xxxx.vercel.app`.
@@ -196,61 +199,72 @@ real sending domain in Resend (removes the one-recipient restriction entirely).
   when Gmail hasn't synced its hidden form fields yet, can't reliably isolate
   Bcc chips and may include them in that specific fallback case.)
 
-## New Outlook compatibility evaluation
+## Office Add-in (New Outlook, Outlook on the web, Mac, Mobile)
 
-Status: **evaluated, not built.** Notes below for whenever it's worth doing.
+Covers what the VBA macro can't: **New Outlook for Windows**, plus Outlook on
+the web and Outlook Mobile as a bonus, since they all share this add-in
+platform. **Requires an Exchange/Microsoft 365-backed mailbox** — it will not
+load on a plain IMAP/POP account (confirmed for `oded@humalign.ai` via its
+`*.mail.protection.outlook.com` MX record).
 
-**Why VBA doesn't work there:** New Outlook is a WebView2 wrapper around the
-same web app that runs Outlook on the web (OWA) — a different architecture
-from Classic, with no VBA project, no COM add-ins, and none of the classic
-Object Model events `Application_ItemSend` relies on. Microsoft has been clear
-this isn't coming back for New Outlook; it's not a gap that gets closed later.
+Files: `public/outlook-addin/manifest.xml`, `commands.html`, `icon-*.png`, and
+`api/addin-commands.js` (the actual handler logic — see why it's a dynamic
+function and not a static file, below).
 
-**The one supported path in: Office Add-ins with the `OnMessageSend` event.**
-Microsoft's modern add-in platform ("Smart Alerts" / event-based activation)
-lets an add-in register a JS handler that runs when the user hits Send, before
-the message goes out — the same job `Application_ItemSend` does, just through
-a completely different framework (`Office.js`, the Outlook Mailbox API,
-async/Promise-based instead of VBA's synchronous calls). It can read/modify
-the subject, body, and recipients, then call `event.completed({allowEvent:
-true})` to let the send proceed. In principle this is a real replacement for
-the macro, built once for this new framework.
+### How it works
 
-**What building it would actually take:**
-- An Office Add-in manifest (XML or the newer unified JSON format) declaring
-  the `OnMessageSend` launch event, plus a small JS file implementing the
-  handler — a new artifact, not a tweak to the existing macro.
-- Somewhere to host that manifest + JS. Vercel already serves this project's
-  backend over HTTPS, so it could live right alongside it (e.g. `/addin/...`)
-  with no new infrastructure.
-- **Sideloading**, i.e. installing it for your mailbox: via OWA → Settings →
-  General → **Manage add-ins** → **My add-ins** → **Add a custom add-in**.
-  One real bonus here — this same add-in would then also cover **Outlook on
-  the web and Outlook Mobile**, not just New Outlook desktop, since they all
-  share this add-in platform. That's more coverage than the current
-  Classic-only macro for the same build effort.
+Uses Microsoft's event-based "Smart Alerts" extensibility: the manifest
+registers an `OnMessageSend` handler that runs when you hit Send, before the
+message goes out — the same job `Application_ItemSend` does for Classic, via
+a completely different framework (`Office.js`, async/callback-based instead
+of VBA's synchronous calls). It reads the subject/recipients, injects the
+same invisible pixel, calls `/register`, then **always** calls
+`event.completed({ allowEvent: true })` — never blocks or delays sending,
+even if the network call fails, guarded by a 4-second safety timeout.
 
-**The open question that gates all of this:** Office Add-ins require an
-Exchange-backed mailbox — Exchange Online / Microsoft 365, or a personal
-Outlook.com account. They do **not** work on a plain IMAP/POP account added
-to Outlook. If `oded@humalign.ai` is hosted on Microsoft 365/Exchange, this is
-viable. If it's actually added to Outlook as generic IMAP (e.g. a domain
-running on Google Workspace or another provider, connected via IMAP/SMTP
-rather than true Exchange), Office Add-ins won't load for it at all, and this
-path is closed regardless of how much of it gets built. **Worth confirming
-the account type before investing further.**
+### Why `api/addin-commands.js` is a function, not a static file
 
-**Known risk, not just theoretical:** `OnMessageSend` handlers have
-documented, reported quirks around async operations (network calls, body
-edits) reliably completing before Outlook proceeds with the send. Expect a
-real debugging cycle here — likely comparable to the Gmail extension's DOM/
-selector iteration this session, just in the async-timing domain instead.
+Real Outlook clients fetch this script over the open internet — unlike the
+VBA macro (never leaves your PC) or the Gmail extension (its key lives in
+`chrome.storage.sync`, entered via the popup, never in code), anything this
+serves is effectively public; anyone can view-source it. So it can't embed
+`SHARED_SECRET`. Instead it's generated per-request with a separate,
+deliberately low-privilege `ADDIN_KEY` — if that leaks, the only thing it
+enables is creating junk `/register` entries; it cannot read the dashboard,
+export data, or snooze/unsnooze anything, since those still require
+`SHARED_SECRET`, which is never embedded in anything publicly servable.
+`api/register.js` accepts either key.
 
-**Rough scope:** comparable to (or larger than) the Gmail extension build —
-a new manifest, a new runtime environment, a new class of bugs to work
-through. The upside is it reuses the existing `/register` and `/o/<id>.gif`
-endpoints unchanged; only the "how the pixel gets in and how send gets
-hooked" layer is new.
+### Setup
+
+1. Add the env var: `ADDIN_KEY` — a long random string, separate from
+   `SHARED_SECRET` (already generated and set for this deployment).
+2. Sideload the manifest for your mailbox: **Outlook on the web → Settings
+   (gear icon) → General → Manage add-ins → My add-ins → Add a custom add-in
+   → Add from URL** → paste `https://<domain>/outlook-addin/manifest.xml`.
+3. It then applies across New Outlook on Windows, Outlook on the web, Mac,
+   and Mobile for that mailbox — no separate install per client.
+4. Send a test and check the dashboard.
+
+### Known risks worth knowing about
+
+- **`OnMessageSend` async-timing quirks are documented, not theoretical** —
+  Microsoft's own GitHub issues describe cases where the handler doesn't
+  reliably complete before Outlook proceeds. If tracking seems to
+  intermittently miss sends from New Outlook specifically (but Classic/Gmail
+  are fine), this event's timing behavior is the first place to look.
+- **Classic Outlook + this add-in, on the same mailbox, double-tracks.** If
+  `oded@humalign.ai` is open in both Classic (VBA macro) and New Outlook
+  (this add-in) — plausible during a gradual transition — a send from
+  Classic only gets the macro's pixel, but if you ever also open that
+  mailbox in New Outlook the add-in adds a second, independent pixel to
+  sends made there. Not harmful, just shows as two rows for what was one
+  train of thought if you switch clients mid-conversation. Not worth solving
+  for a single-user setup.
+- `SendMode="PromptUser"` was chosen deliberately: if the add-in fails to
+  load at all, Outlook asks once whether to send anyway rather than silently
+  blocking — consistent with this project's "never block the actual send"
+  rule throughout.
 
 ## What this cannot do (true of every pixel tracker, paid ones included)
 
