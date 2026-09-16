@@ -34,7 +34,9 @@ export default async function handler(req, res) {
         ? `only scanner hits (${m.opens.length})`
         : "not opened";
       return (
-        `<tr data-id="${esc(m.id)}" data-sent="${m.createdAt}" class="${isSnoozed ? "snoozed" : ""}">` +
+        `<tr data-id="${esc(m.id)}" data-sent="${m.createdAt}" ` +
+        `data-status="${human.length ? "opened" : "not-opened"}" data-snoozed="${isSnoozed ? 1 : 0}" ` +
+        `class="${isSnoozed ? "snoozed" : ""}">` +
         `<td>${fmt(m.createdAt, c.TZ)}</td>` +
         `<td>${esc(m.subject)}</td>` +
         `<td>${esc(m.account || "-")}</td>` +
@@ -66,12 +68,18 @@ export default async function handler(req, res) {
         #empty{display:none;color:#666;padding:12px 0}
         .controls a{white-space:nowrap;color:#0645ad}
         .summary{color:#444;margin:0 0 10px}
+        button.filt{font:inherit;color:inherit;background:none;border:none;padding:0;cursor:pointer;text-decoration:underline dotted}
+        button.filt.active{font-weight:600;color:#0645ad;text-decoration:none}
         .table-wrap{overflow-x:auto}
         table{min-width:640px}
       </style>` +
       `<h2>Tracked emails (<span id="count">${rows.length}</span>)</h2>` +
-      `<div class="summary">${rows.length} tracked &middot; ${openedCount} opened &middot; ` +
-      `${rows.length - openedCount} not opened &middot; ${snoozedCount} snoozed</div>` +
+      `<div class="summary">` +
+      `<button class="filt active" data-filter="all">${rows.length} tracked</button> &middot; ` +
+      `<button class="filt" data-filter="opened">${openedCount} opened</button> &middot; ` +
+      `<button class="filt" data-filter="not-opened">${rows.length - openedCount} not opened</button> &middot; ` +
+      `<button class="filt" data-filter="snoozed">${snoozedCount} snoozed</button>` +
+      `</div>` +
       `<div class="controls"><input type="search" id="q" placeholder="Search subject / account / recipient / status…">` +
       `<a href="/api/export?k=${encodeURIComponent(key)}">Export CSV</a></div>` +
       `<div class="table-wrap"><table id="tbl"><thead><tr>` +
@@ -91,16 +99,34 @@ function clientScript(key) {
     const tbody = document.querySelector('#tbl tbody');
     const q = document.getElementById('q');
     const empty = document.getElementById('empty');
+    let statusFilter = 'all';
 
-    q.addEventListener('input', () => {
+    function matchesFilter(tr) {
+      if (statusFilter === 'all') return true;
+      if (statusFilter === 'snoozed') return tr.dataset.snoozed === '1';
+      return tr.dataset.status === statusFilter;
+    }
+
+    function applyFilters() {
       const term = q.value.toLowerCase();
       let visible = 0;
       tbody.querySelectorAll('tr').forEach((tr) => {
-        const show = tr.textContent.toLowerCase().includes(term);
+        const show = matchesFilter(tr) && tr.textContent.toLowerCase().includes(term);
         tr.style.display = show ? '' : 'none';
         if (show) visible++;
       });
       empty.style.display = visible === 0 ? '' : 'none';
+    }
+
+    q.addEventListener('input', applyFilters);
+
+    document.querySelectorAll('button.filt').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        statusFilter = btn.dataset.filter;
+        document.querySelectorAll('button.filt').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        applyFilters();
+      });
     });
 
     document.querySelectorAll('#tbl thead th[data-k]').forEach((th, idx) => {
