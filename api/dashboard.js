@@ -1,14 +1,14 @@
-// GET /dashboard?k=SHARED_SECRET  — searchable/sortable table of every
-// tracked email, with a per-row snooze button that stops the "not opened"
-// nudge for messages you don't expect (or care about) a reply to.
-import { redis, cfg, fmt, safeEqual, securityHeaders } from "../lib/tracker.js";
+// GET /dashboard  — searchable/sortable table of every tracked email, with a
+// per-row snooze button that stops the "not opened" nudge for messages you
+// don't expect (or care about) a reply to. Requires signing in at /login -
+// no secret sits in this URL, so it's safe to bookmark.
+import { redis, cfg, fmt, hasValidSession, securityHeaders } from "../lib/tracker.js";
 
 export default async function handler(req, res) {
-  const key = String(req.query.k || "");
   securityHeaders(res, { noStore: true });
-  if (!safeEqual(key, process.env.SHARED_SECRET || "")) {
-    console.warn("[dashboard] rejected: invalid key", { ip: req.headers["x-forwarded-for"] });
-    return res.status(403).send("forbidden");
+  if (!hasValidSession(req)) {
+    res.setHeader("Location", "/login");
+    return res.status(302).end();
   }
   const c = cfg();
 
@@ -94,21 +94,20 @@ export default async function handler(req, res) {
       `<button class="filt" data-filter="snoozed">${snoozedCount} snoozed</button>` +
       `</div>` +
       `<div class="controls"><input type="search" id="q" placeholder="Search subject / account / recipient / status…">` +
-      `<a href="/api/export?k=${encodeURIComponent(key)}">Export CSV</a></div>` +
+      `<a href="/api/export">Export CSV</a><a href="/logout">Log out</a></div>` +
       `<div class="table-wrap"><table id="tbl"><thead><tr>` +
       `<th data-k="sent">Sent</th><th data-k="text">Subject</th><th data-k="text">From</th>` +
       `<th data-k="text">To</th><th data-k="text">Status</th><th></th>` +
       `</tr></thead><tbody>${body}</tbody></table></div>` +
       `<div id="empty">No rows match your search.</div>` +
-      `<script>${clientScript(key)}</script>`
+      `<script>${clientScript()}</script>`
   );
 }
 
-function clientScript(key) {
-  // key is the same SHARED_SECRET already required to load this page at all -
-  // embedding it back into the page's own script discloses nothing new.
+function clientScript() {
+  // No key to embed anymore - the session cookie goes along automatically
+  // with same-origin fetch() calls, so /api/snooze just works.
   return `
-    const K = ${JSON.stringify(key)};
     const tbody = document.querySelector('#tbl tbody');
     const q = document.getElementById('q');
     const empty = document.getElementById('empty');
@@ -173,7 +172,7 @@ function clientScript(key) {
       try {
         const res = await fetch('/api/snooze', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Track-Key': K },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id, snoozed: nextSnoozed }),
         });
         if (res.ok) location.reload();

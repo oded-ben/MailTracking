@@ -1,5 +1,6 @@
-// GET /api/export?k=SHARED_SECRET  — every tracked message as a CSV download.
-import { redis, cfg, fmt, safeEqual, securityHeaders } from "../lib/tracker.js";
+// GET /api/export  — every tracked message as a CSV download. Requires the
+// same dashboard sign-in session as /dashboard (see /login).
+import { redis, cfg, fmt, hasValidSession, securityHeaders } from "../lib/tracker.js";
 
 // subject/account/to all originate from /register, which anyone holding
 // ADDIN_KEY can call. Excel/Sheets treats a field starting with =, +, -, @,
@@ -14,11 +15,10 @@ function csvField(v) {
 }
 
 export default async function handler(req, res) {
-  const key = String(req.query.k || "");
   securityHeaders(res, { noStore: true });
-  if (!safeEqual(key, process.env.SHARED_SECRET || "")) {
-    console.warn("[export] rejected: invalid key", { ip: req.headers["x-forwarded-for"] });
-    return res.status(403).send("forbidden");
+  if (!hasValidSession(req)) {
+    res.setHeader("Location", "/login");
+    return res.status(302).end();
   }
   const c = cfg();
 

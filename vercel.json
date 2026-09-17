@@ -4,6 +4,8 @@
     { "source": "/o/:id", "destination": "/api/pixel?id=:id" },
     { "source": "/register", "destination": "/api/register" },
     { "source": "/dashboard", "destination": "/api/dashboard" },
+    { "source": "/login", "destination": "/api/login" },
+    { "source": "/logout", "destination": "/api/logout" },
     { "source": "/outlook-addin/commands.js", "destination": "/api/addin-commands" }
   ],
   "crons": [

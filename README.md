@@ -110,7 +110,7 @@ The repo is already on GitHub, so use the Git integration:
 ### 3. Smoke-test
 
 - `https://<domain>/o/test.gif` → a blank 1x1 image (200)
-- `https://<domain>/dashboard?k=<SHARED_SECRET>` → empty table
+- `https://<domain>/login` → a sign-in form; the password is your `SHARED_SECRET` (see "Signing in" below)
 - `https://<domain>/api/cron?k=<SHARED_SECRET>` → `{"ok":true,"candidates":0,"sent":0}`
 
 ### 4. Outlook macro (adds the pixel)
@@ -171,9 +171,22 @@ by this code — `NOTIFY_TO` will still get every alert either way, so nothing i
 lost, but the second address won't reliably receive anything until you verify a
 real sending domain in Resend (removes the one-recipient restriction entirely).
 
+## Signing in
+
+`/dashboard` and `/api/export` require signing in at **`/login`** — the password
+is your `SHARED_SECRET`. On success you get a signed, HttpOnly session cookie
+(30 days) instead of a secret sitting in the URL, so `/dashboard` is now safe to
+bookmark, share a screenshot of by accident, or leave in browser history.
+**Log out** on the dashboard clears it. There's no separate user database or
+password to manage — the cookie is just an expiry timestamp signed with the
+`SHARED_SECRET` you already have, verified on every request; nothing is stored
+server-side. `/api/snooze` accepts either that session (the dashboard's own
+calls use it automatically) or the original `X-Track-Key: SHARED_SECRET` header,
+kept as an escape hatch for calling it outside the browser.
+
 ## Dashboard: search, sort, snooze, export
 
-`/dashboard?k=<SHARED_SECRET>` has:
+`/dashboard` has:
 - a **summary line** — tracked / opened / not opened / snoozed counts, at a glance,
 - a **search box** that filters rows by subject/account/recipient/status as you type,
 - **sortable columns** (click any header, click again to reverse),
@@ -182,9 +195,8 @@ real sending domain in Resend (removes the one-recipient restriction entirely).
   stops nagging you without lying about whether it was actually opened. Doesn't
   affect first-open/burst alerts, which still fire normally if it is opened later.
   Click **Un-snooze** to undo.
-- an **Export CSV** link (`/api/export?k=<SHARED_SECRET>`) that downloads every
-  tracked message as a CSV: sent time, subject, from, to, open count, first-open
-  time, snoozed, status.
+- an **Export CSV** link that downloads every tracked message as a CSV: sent
+  time, subject, from, to, open count, first-open time, snoozed, status.
 - the table **scrolls horizontally** on narrow screens instead of breaking layout.
 
 ## Alert email details
