@@ -3,8 +3,8 @@
 '  Outlook Classic for Windows only. "New Outlook" has no VBA.
 ' ===========================================================================
 
-Private Const BASE As String = "https://email-tracker.YOURNAME.workers.dev"  ' your Worker URL, NO trailing slash
-Private Const KEY As String = "PASTE_YOUR_SHARED_SECRET"                     ' must match the Worker's SHARED_SECRET
+Private Const BASE As String = "https://your-app.vercel.app"  ' your Vercel domain, NO trailing slash
+Private Const KEY As String = "PASTE_YOUR_SHARED_SECRET"      ' must match SHARED_SECRET
 Private Const TRACK_ALL As Boolean = True            ' False = only track mails you tag with the "Track" category
 Private Const CONVERT_PLAIN_TO_HTML As Boolean = True ' a pixel needs an HTML body
 
@@ -14,6 +14,18 @@ Private Sub Application_ItemSend(ByVal Item As Object, Cancel As Boolean)
     If Item.Class <> olMail Then Exit Sub
     Dim mail As Outlook.MailItem
     Set mail = Item
+
+    ' Outlook can fire ItemSend more than once for the same message - most
+    ' commonly when a send hiccups and Outlook retries from the Outbox,
+    ' re-triggering the event on the same item. Without this guard that
+    ' means two separate tracked entries (two pixels, two /register calls)
+    ' for what you only ever sent once. Tag the item the first time through;
+    ' a retry carries the same tag and gets skipped.
+    Dim already As Outlook.UserProperty
+    Set already = mail.UserProperties.Find("MailTrackingID")
+    If Not already Is Nothing Then
+        If Len(already.Value) > 0 Then Exit Sub
+    End If
 
     If Not TRACK_ALL Then
         If InStr(1, "|" & Replace(mail.Categories, " ", "") & "|", "|Track|", vbTextCompare) = 0 Then Exit Sub
@@ -30,6 +42,13 @@ Private Sub Application_ItemSend(ByVal Item As Object, Cancel As Boolean)
     Randomize
     Dim id As String
     id = Format$(Now, "yyyymmdd-hhnnss") & "-" & Right$("000000" & CStr(Int(Rnd() * 1000000#)), 6)
+
+    ' Tag the item now, before any of the network/body work below, so a
+    ' retry of this same item is caught by the guard above even if this
+    ' pass fails partway through.
+    Dim tagProp As Outlook.UserProperty
+    Set tagProp = mail.UserProperties.Add("MailTrackingID", olText)
+    tagProp.Value = id
 
     ' Bcc intentionally excluded - the point of Bcc is that recipients don't
     ' see each other, so it shouldn't end up sitting in a log column either.
