@@ -5,9 +5,20 @@
   <title>MailTracking commands</title>
   <!-- Required for the WebView runtime (Outlook on the web, Mac, New Outlook
        on Windows). Classic Outlook on Windows loads commands.js directly and
-       never loads this page - see manifest.xml's Runtimes/Override. -->
-  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-  <script src="commands.js"></script>
+       never loads this page - see manifest.xml's Runtimes/Override.
+
+       preload + defer: lets both files start downloading in parallel the
+       instant HTML parsing begins, instead of waiting for office.js to fully
+       download AND execute before even starting the commands.js download.
+       defer still guarantees they execute in this order once both are ready.
+       Diagnostics showed the handler registers successfully but is invoked
+       too late (or not at all) - if any of this delay is in the bootstrap
+       itself rather than in our own async calls (already parallelized),
+       this is the lever available to pull on it. -->
+  <link rel="preload" as="script" href="https://appsforoffice.microsoft.com/lib/1/hosted/office.js" />
+  <link rel="preload" as="script" href="commands.js" />
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js" defer></script>
+  <script src="commands.js" defer></script>
 </head>
 <body></body>
 </html>

@@ -10,7 +10,7 @@
   <!-- Bump this on every change - admin.microsoft.com's "Update add-in" flow
        refuses to re-fetch the manifest otherwise ("Please update the
        version number in the manifest file and try again"), confirmed live. -->
-  <Version>1.0.0.1</Version>
+  <Version>1.0.0.2</Version>
   <ProviderName>MailTracking</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="MailTracking" />

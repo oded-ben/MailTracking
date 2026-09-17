@@ -53,6 +53,15 @@ function ping(checkpoint, detail) {
   } catch (e) {
     info = 'error reading diagnostics: ' + e.message;
   }
+  // How long the document itself has existed by the time our script runs -
+  // a proxy for how much of the delay is "loading commands.html/office.js/
+  // commands.js" versus something inside our own async logic.
+  try {
+    var t = performance.timing;
+    info += ' | ms since navigationStart: ' + (Date.now() - t.navigationStart);
+  } catch (e) {
+    info += ' | timing unavailable: ' + e.message;
+  }
   ping('script-loaded', info);
 })();
 
