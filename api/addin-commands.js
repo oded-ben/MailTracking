@@ -26,6 +26,36 @@ export default function handler(req, res) {
 var BASE = ${JSON.stringify(base)};
 var KEY = ${JSON.stringify(key)};
 
+// TEMPORARY diagnostics: this runtime is a hidden background context with no
+// console we can read, so it self-reports checkpoints to our own backend
+// instead - GET /api/addin-debug?k=SHARED_SECRET to read them back. Remove
+// once we've confirmed where (if anywhere) the handler is actually failing.
+function ping(checkpoint, detail) {
+  try {
+    var x = new XMLHttpRequest();
+    x.open('POST', BASE + '/api/addin-debug', true);
+    x.setRequestHeader('Content-Type', 'application/json');
+    x.setRequestHeader('X-Track-Key', KEY);
+    x.send(JSON.stringify({ checkpoint: checkpoint, detail: String(detail || '') }));
+  } catch (e) {
+    /* nothing more we can do if even this fails */
+  }
+}
+
+// Fires the instant this script is parsed and executed by whatever runtime
+// loaded it - the single most important checkpoint, since it's never been
+// confirmed that this even happens for New Outlook's hidden runtime.
+(function () {
+  var info = '';
+  try {
+    var d = Office && Office.context && Office.context.diagnostics;
+    info = d ? (d.host + ' ' + d.platform + ' ' + d.version) : 'no Office.context yet';
+  } catch (e) {
+    info = 'error reading diagnostics: ' + e.message;
+  }
+  ping('script-loaded', info);
+})();
+
 // Each Office.js getAsync/XHR call is a network round-trip to Exchange. The
 // original version chained six of them one after another (subject -> to ->
 // cc -> register -> body-get -> body-set), which was slow enough in practice
@@ -34,16 +64,20 @@ var KEY = ${JSON.stringify(key)};
 // parallel, then doing the two independent writes (register + body-set) in
 // parallel, cuts that to two round-trips' worth of latency instead of six.
 function onMessageSendHandler(event) {
+  ping('handler-invoked');
   var item = Office.context.mailbox.item;
   var done = false;
-  function finish() {
+  function finish(why) {
     if (done) return;
     done = true;
+    ping('finishing', why);
     event.completed({ allowEvent: true });
   }
   // Safety net, tightened from the original 4s specifically because that was
   // too close to (or past) Outlook's own patience threshold to matter.
-  var safety = setTimeout(finish, 2500);
+  var safety = setTimeout(function () {
+    finish('safety-timeout');
+  }, 2500);
 
   try {
     var subject = "(no subject)";
@@ -75,6 +109,7 @@ function onMessageSendHandler(event) {
     });
 
     function proceed() {
+      ping('fetches-complete', 'subject len ' + subject.length + ', to ' + toList.length + ', cc ' + ccList.length + ', body len ' + bodyHtml.length);
       try {
         // Bcc intentionally excluded - same rule as the VBA macro and the
         // Gmail extension: Bcc's whole point is recipients don't see each
@@ -102,11 +137,12 @@ function onMessageSendHandler(event) {
           : bodyHtml + px;
 
         var toJoin = 2;
-        function joined() {
+        function joined(who) {
+          ping('joined:' + who);
           toJoin--;
           if (toJoin <= 0) {
             clearTimeout(safety);
-            finish();
+            finish('normal-completion');
           }
         }
 
@@ -116,27 +152,31 @@ function onMessageSendHandler(event) {
           xhr.setRequestHeader("Content-Type", "application/json");
           xhr.setRequestHeader("X-Track-Key", KEY);
           xhr.timeout = 2000;
-          xhr.onloadend = joined;
-          xhr.onerror = joined;
-          xhr.ontimeout = joined;
+          xhr.onloadend = function () { joined('register-loadend-' + xhr.status); };
+          xhr.onerror = function () { joined('register-error'); };
+          xhr.ontimeout = function () { joined('register-timeout'); };
           xhr.send(JSON.stringify({ id: id, subject: subject, to: recips, account: account }));
         } catch (e) {
-          joined();
+          joined('register-exception:' + e.message);
         }
 
         try {
-          item.body.setAsync(newHtml, { coercionType: Office.CoercionType.Html }, joined);
+          item.body.setAsync(newHtml, { coercionType: Office.CoercionType.Html }, function () {
+            joined('body-set');
+          });
         } catch (e) {
-          joined();
+          joined('body-set-exception:' + e.message);
         }
       } catch (e) {
+        ping('proceed-exception', e.message);
         clearTimeout(safety);
-        finish();
+        finish('proceed-exception');
       }
     }
   } catch (e) {
+    ping('outer-exception', e.message);
     clearTimeout(safety);
-    finish();
+    finish('outer-exception');
   }
 }
 
