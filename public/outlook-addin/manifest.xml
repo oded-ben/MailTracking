@@ -7,7 +7,10 @@
   xsi:type="MailApp">
 
   <Id>3f6e2b8a-9c4d-4f1a-8e7b-2d5c6a9f0b1e</Id>
-  <Version>1.0.0.0</Version>
+  <!-- Bump this on every change - admin.microsoft.com's "Update add-in" flow
+       refuses to re-fetch the manifest otherwise ("Please update the
+       version number in the manifest file and try again"), confirmed live. -->
+  <Version>1.0.0.1</Version>
   <ProviderName>MailTracking</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="MailTracking" />
