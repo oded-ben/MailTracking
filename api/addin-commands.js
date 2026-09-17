@@ -182,7 +182,13 @@ function onMessageSendHandler(event) {
 
 // Required: maps the manifest's LaunchEvent FunctionName to this handler.
 // Without this call, a failed/slow add-in load can block sending entirely.
-Office.actions.associate("onMessageSendHandler", onMessageSendHandler);
+ping('before-associate', typeof Office !== 'undefined' && Office.actions ? 'Office.actions exists' : 'Office.actions MISSING');
+try {
+  Office.actions.associate("onMessageSendHandler", onMessageSendHandler);
+  ping('after-associate-success');
+} catch (e) {
+  ping('associate-exception', e.message);
+}
 `;
 
   res.setHeader("Content-Type", "application/javascript; charset=utf-8");
