@@ -68,7 +68,7 @@ Private Sub Application_ItemSend(ByVal Item As Object, Cancel As Boolean)
         If Len(acct.DisplayName) > 0 Then acctName = acct.DisplayName
     End If
 
-    ' --- tell the Worker about this message (best effort; a failure won't block the send) ---
+    ' --- tell the server about this message (best effort; a failure won't block the send) ---
     Dim http As Object
     Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
     http.setTimeouts 2000, 2000, 4000, 4000
@@ -78,11 +78,20 @@ Private Sub Application_ItemSend(ByVal Item As Object, Cancel As Boolean)
     http.send "{""id"":""" & id & """,""subject"":" & J(mail.Subject) & ",""to"":" & J(recips) & _
                ",""account"":" & J(acctName) & "}"
 
+    ' The server may recognize this as a duplicate of a message registered a
+    ' few seconds ago (Outlook can fire ItemSend more than once for the same
+    ' send) and hand back the *existing* message's pixel URL instead of a new
+    ' one - use whatever it returns rather than always building our own, so a
+    ' duplicate firing lands on the same tracked row instead of a new one.
+    Dim pixelUrl As String
+    pixelUrl = ExtractJsonString(http.responseText, "pixel")
+    If Len(pixelUrl) = 0 Then pixelUrl = BASE & "/o/" & id & ".gif" ' best effort if the call failed
+
     ' --- inject the invisible pixel ---
     ' alt is a single space, not empty - some clients' preview/snippet text
     ' falls back to showing the raw image URL when alt="" is empty.
     Dim px As String
-    px = "<img src=""" & BASE & "/o/" & id & ".gif"" alt="" "" width=""1"" height=""1"" " & _
+    px = "<img src=""" & pixelUrl & """ alt="" "" width=""1"" height=""1"" " & _
          "style=""display:none !important;opacity:0;width:1px;height:1px;overflow:hidden;"" />"
 
     Dim hb As String
@@ -102,4 +111,27 @@ Private Function J(ByVal s As String) As String
     s = Replace(s, vbLf, " ")
     s = Replace(s, vbTab, " ")
     J = """" & s & """"
+End Function
+
+' Pulls the value of one string field out of a small, flat JSON response
+' (e.g. {"ok":true,"pixel":"https://..."}) - not a real JSON parser, just
+' enough for the shapes this server actually returns.
+Private Function ExtractJsonString(ByVal json As String, ByVal key As String) As String
+    Dim marker As String
+    marker = """" & key & """:"""
+    Dim p As Long
+    p = InStr(1, json, marker, vbTextCompare)
+    If p = 0 Then
+        ExtractJsonString = ""
+        Exit Function
+    End If
+    Dim startPos As Long
+    startPos = p + Len(marker)
+    Dim endPos As Long
+    endPos = InStr(startPos, json, """")
+    If endPos = 0 Then
+        ExtractJsonString = ""
+    Else
+        ExtractJsonString = Mid$(json, startPos, endPos - startPos)
+    End If
 End Function
