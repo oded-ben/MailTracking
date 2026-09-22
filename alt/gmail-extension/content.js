@@ -7,7 +7,7 @@
 (function () {
   // Flip to true to see step-by-step logs (prefixed [MailTracking]) in the
   // Gmail tab's console — useful if tracking ever silently stops working.
-  const DEBUG = true;
+  const DEBUG = false;
   const log = (...a) => DEBUG && console.log("[MailTracking]", ...a);
 
   let CONFIG = null;
