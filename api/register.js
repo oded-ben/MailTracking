@@ -19,12 +19,26 @@ const cap = (s, n) => String(s ?? "").slice(0, n);
 // different sends that happen to share a subject and recipient.
 const DEDUP_WINDOW_MS = 5000;
 
+// Confirmed live: two firings of the same send produced recipient strings
+// that differed only by a trailing "; " (Outlook's Recipients collection
+// apparently isn't always in the exact same state/order between the two
+// firings), which made an exact-string comparison miss the match entirely.
+// Normalize before comparing so formatting noise like that can't defeat it.
+const norm = (s) =>
+  String(s ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[;,\s]+$/, "");
+
 async function findRecentDuplicate(r, subject, to, account) {
   const now = Date.now();
   const ids = await r.zrange("msgs", now - DEDUP_WINDOW_MS, now, { byScore: true });
+  const nSubject = norm(subject);
+  const nTo = norm(to);
+  const nAccount = norm(account);
   for (let i = ids.length - 1; i >= 0; i--) {
     const m = await r.get(`msg:${ids[i]}`);
-    if (m && m.subject === subject && m.to === to && m.account === account) return m;
+    if (m && norm(m.subject) === nSubject && norm(m.to) === nTo && norm(m.account) === nAccount) return m;
   }
   return null;
 }
