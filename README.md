@@ -265,14 +265,18 @@ export data, or snooze/unsnooze anything, since those still require
   reliably complete before Outlook proceeds. If tracking seems to
   intermittently miss sends from New Outlook specifically (but Classic/Gmail
   are fine), this event's timing behavior is the first place to look.
-- **Classic Outlook + this add-in, on the same mailbox, double-tracks.** If
-  `oded@humalign.ai` is open in both Classic (VBA macro) and New Outlook
-  (this add-in) — plausible during a gradual transition — a send from
-  Classic only gets the macro's pixel, but if you ever also open that
-  mailbox in New Outlook the add-in adds a second, independent pixel to
-  sends made there. Not harmful, just shows as two rows for what was one
-  train of thought if you switch clients mid-conversation. Not worth solving
-  for a single-user setup.
+- **The add-in also runs inside Classic Outlook, so Classic sends are
+  registered twice.** The manifest's JS-runtime override is what makes the
+  add-in work in Classic, and an admin-deployed add-in applies to the whole
+  mailbox, so every Classic send is tracked by both the VBA macro and the
+  add-in. (An earlier version of this note claimed otherwise; the dashboard
+  proved it wrong — each duplicate pair is one `2026…` macro id plus one
+  `addin-…` id.) `api/register.js` collapses them: registrations for the same
+  subject and the same recipient addresses within 10 seconds are treated as
+  one message, claimed atomically with `SET NX`, and the surviving row picks
+  up the real account if the macro reported `(default account)`. The sent
+  email carries two pixels; only the first-registered one is a real row, the
+  other points at an id that was never stored and is ignored.
 - `SendMode="PromptUser"` was chosen deliberately: if the add-in fails to
   load at all, Outlook asks once whether to send anyway rather than silently
   blocking — consistent with this project's "never block the actual send"
