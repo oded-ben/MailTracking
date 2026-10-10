@@ -3,44 +3,55 @@
 // extension - kept reasonably private) or ADDIN_KEY (the Office Add-in's
 // commands.js is served publicly, so its key is deliberately low-privilege:
 // leaking it only allows creating junk register entries, nothing else).
+import crypto from "node:crypto";
 import { redis, TTL, safeEqual, securityHeaders } from "../lib/tracker.js";
 
 // Truncate (never reject) so an oversized payload can't bloat storage, while
 // a legitimately long subject/recipient list still gets through unharmed.
 const cap = (s, n) => String(s ?? "").slice(0, n);
 
-// Outlook can fire ItemSend more than once for the same message - confirmed
-// live even with a client-side guard tagging the message object, meaning
-// Outlook isn't reusing the same object on the retry (that assumption was
-// wrong). This catches it independent of whatever Outlook does internally:
-// two registrations with identical subject/to/account within a few seconds
-// are treated as one message, not two. Small window on purpose - long enough
-// to catch a same-second retry, short enough not to merge two genuinely
-// different sends that happen to share a subject and recipient.
-const DEDUP_WINDOW_MS = 5000;
+// The same send gets registered more than once, within about a second:
+// the admin-deployed Office Add-in also runs inside Classic Outlook (its
+// script-only runtime), so every Classic send is tracked by BOTH the VBA
+// macro and the add-in. Confirmed from the dashboard: each duplicate pair is
+// one 2026...-style (macro) id plus one addin-... id. Treat registrations for
+// the same subject and the same recipient addresses within a short window as
+// one message. Small window on purpose - long enough to catch the pair, short
+// enough not to merge two genuinely separate sends of the same subject.
+const DEDUP_WINDOW_MS = 10000;
 
-// Confirmed live: two firings of the same send produced recipient strings
-// that differed only by a trailing "; " (Outlook's Recipients collection
-// apparently isn't always in the exact same state/order between the two
-// firings), which made an exact-string comparison miss the match entirely.
-// Normalize before comparing so formatting noise like that can't defeat it.
-const norm = (s) =>
-  String(s ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[;,\s]+$/, "");
+// The two trackers describe the SAME send differently, so don't compare raw
+// strings: the macro reports account "(default account)" (it can't resolve
+// one on a default Exchange account) while the add-in reports the real
+// address, and recipient strings differ in trailing "; " and display-name
+// formatting. Compare subject and the SET of recipient email addresses only.
+const normText = (s) => String(s ?? "").trim().toLowerCase();
+const recipientSet = (to) => {
+  const emails = String(to ?? "").toLowerCase().match(/[^\s<>;,"']+@[^\s<>;,"']+/g) || [];
+  return [...new Set(emails)].sort().join(",") || normText(to);
+};
+const isGenericAccount = (a) => {
+  const v = normText(a);
+  return v === "" || v === "(default account)" || v === "gmail";
+};
 
-async function findRecentDuplicate(r, subject, to, account) {
-  const now = Date.now();
-  const ids = await r.zrange("msgs", now - DEDUP_WINDOW_MS, now, { byScore: true });
-  const nSubject = norm(subject);
-  const nTo = norm(to);
-  const nAccount = norm(account);
-  for (let i = ids.length - 1; i >= 0; i--) {
-    const m = await r.get(`msg:${ids[i]}`);
-    if (m && norm(m.subject) === nSubject && norm(m.to) === nTo && norm(m.account) === nAccount) return m;
-  }
-  return null;
+// Atomic claim instead of "scan recent rows, then write": both trackers can
+// register within the same instant, and a check-then-write would let both
+// through. SET NX with a short expiry makes exactly one of them the winner;
+// the other gets the winner's id back. Returns null if we're the first.
+async function claimOrFindDuplicate(r, rec) {
+  const fingerprint = crypto
+    .createHash("sha1")
+    .update(normText(rec.subject) + "|" + recipientSet(rec.to))
+    .digest("hex");
+  const claimKey = `dedup:${fingerprint}`;
+  const won = await r.set(claimKey, rec.id, { nx: true, ex: Math.ceil(DEDUP_WINDOW_MS / 1000) });
+  if (won) return null;
+  const winnerId = await r.get(claimKey);
+  if (!winnerId) return null; // claim expired between the two calls - treat as new
+  // The winner may not have written its record yet (it claims first), so the
+  // record can be missing; its id is still the right pixel to hand back.
+  return { id: String(winnerId), record: await r.get(`msg:${winnerId}`) };
 }
 
 export default async function handler(req, res) {
@@ -81,8 +92,15 @@ export default async function handler(req, res) {
   const proto = req.headers["x-forwarded-proto"] || "https";
   const host = req.headers["host"];
 
-  const dup = await findRecentDuplicate(r, rec.subject, rec.to, rec.account);
+  const dup = await claimOrFindDuplicate(r, rec);
   if (dup) {
+    // The macro registers "(default account)", the add-in the real address.
+    // Whichever got there first survives, so let it pick up the real account.
+    const existing = dup.record;
+    if (existing && isGenericAccount(existing.account) && !isGenericAccount(rec.account)) {
+      existing.account = rec.account;
+      await r.set(`msg:${existing.id}`, existing, { ex: TTL });
+    }
     // Don't create a second entry - hand back the *existing* message's pixel
     // URL so whichever copy of the email actually goes out still carries a
     // pixel that resolves to the one tracked row, instead of an orphaned id
