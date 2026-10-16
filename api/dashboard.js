@@ -4,6 +4,8 @@
 // no secret sits in this URL, so it's safe to bookmark.
 import { redis, cfg, fmt, hasValidSession, securityHeaders, sourceOf, SOURCES } from "../lib/tracker.js";
 
+const MAX_ROWS = 500;
+
 export default async function handler(req, res) {
   securityHeaders(res, { noStore: true });
   if (!hasValidSession(req)) {
@@ -14,11 +16,9 @@ export default async function handler(req, res) {
 
   const r = redis();
   const ids = await r.zrange("msgs", 0, -1, { rev: true });
-  const rows = [];
-  for (const id of ids.slice(0, 300)) {
-    const m = await r.get(`msg:${id}`);
-    if (m) rows.push(m);
-  }
+  const shownIds = ids.slice(0, MAX_ROWS);
+  // One batched read instead of a round-trip per row.
+  const rows = shownIds.length ? (await r.mget(...shownIds.map((id) => `msg:${id}`))).filter(Boolean) : [];
 
   // Escapes all five HTML-significant characters, not just &<> - this value
   // is interpolated into both element content AND attribute values (e.g.
@@ -83,7 +83,9 @@ export default async function handler(req, res) {
     outlook: "Outlook",
     browser: "browser / webmail",
     other: "unknown client",
+    scanner: "security scanner / bot",
   };
+  const SOURCE_NAME = { macro: "Outlook macro", addin: "Outlook add-in", gmail: "Gmail extension" };
 
   const body = rows
     .map((m) => {
@@ -99,8 +101,18 @@ export default async function handler(req, res) {
         : (m.opens || []).length
         ? `only scanner hits (${m.opens.length})`
         : "not opened";
+      // Open history for the click-to-expand detail row (latest 50 hits).
+      const history = JSON.stringify({
+        via: SOURCE_NAME[sourceOf(m.id)],
+        opens: (m.opens || []).slice(-50).map((o) => ({
+          t: fmt(o.t, c.TZ),
+          counted: !o.bot,
+          who: o.k ? CLIENT_LABEL[o.k] || o.k : "",
+          ua: o.ua || "",
+        })),
+      });
       return (
-        `<tr data-id="${esc(m.id)}" data-sent="${m.createdAt}" ` +
+        `<tr data-id="${esc(m.id)}" data-sent="${m.createdAt}" data-history="${esc(history)}" ` +
         `data-status="${human.length ? "opened" : "not-opened"}" data-snoozed="${isSnoozed ? 1 : 0}" ` +
         `class="${isSnoozed ? "snoozed" : ""}">` +
         `<td>${fmt(m.createdAt, c.TZ)}</td>` +
@@ -109,7 +121,8 @@ export default async function handler(req, res) {
         `<td>${esc(m.to)}</td>` +
         `<td>${status}${isSnoozed ? " (snoozed)" : ""}</td>` +
         `<td><button class="snooze" data-id="${esc(m.id)}" data-snoozed="${isSnoozed ? 1 : 0}">` +
-        `${isSnoozed ? "Un-snooze" : "Snooze"}</button></td>` +
+        `${isSnoozed ? "Un-snooze" : "Snooze"}</button> ` +
+        `<button class="del" data-id="${esc(m.id)}">Delete</button></td>` +
         `</tr>`
       );
     })
@@ -130,7 +143,13 @@ export default async function handler(req, res) {
         th.sort-asc::after{content:" \\25B2"}
         th.sort-desc::after{content:" \\25BC"}
         tr.snoozed{opacity:.55}
-        button.snooze{font:inherit;padding:3px 10px;cursor:pointer}
+        button.snooze,button.del{font:inherit;padding:3px 10px;cursor:pointer}
+        button.del{color:#a30000}
+        #tbl tbody tr[data-id]{cursor:pointer}
+        tr.detail td{background:#fafafa;cursor:default}
+        tr.detail ul{margin:4px 0 0;padding-left:18px}
+        tr.detail li.ignored{color:#888}
+        tr.detail code{font-size:12px;color:#666;word-break:break-all}
         #empty{display:none;color:#666;padding:12px 0}
         .controls a{white-space:nowrap;color:#0645ad}
         .summary{color:#444;margin:0 0 10px}
@@ -157,6 +176,7 @@ export default async function handler(req, res) {
       `<th data-k="text">To</th><th data-k="text">Status</th><th></th>` +
       `</tr></thead><tbody>${body}</tbody></table></div>` +
       `<div id="empty">No rows match your search.</div>` +
+      (ids.length > MAX_ROWS ? `<p class="summary">Showing the newest ${MAX_ROWS} of ${ids.length}. Export CSV has all of them.</p>` : "") +
       `<script>${clientScript()}</script>`
   );
 }
@@ -179,7 +199,8 @@ function clientScript() {
     function applyFilters() {
       const term = q.value.toLowerCase();
       let visible = 0;
-      tbody.querySelectorAll('tr').forEach((tr) => {
+      closeDetails();
+      tbody.querySelectorAll('tr[data-id]').forEach((tr) => {
         const show = matchesFilter(tr) && tr.textContent.toLowerCase().includes(term);
         tr.style.display = show ? '' : 'none';
         if (show) visible++;
@@ -203,7 +224,8 @@ function clientScript() {
         const asc = !th.classList.contains('sort-asc');
         document.querySelectorAll('#tbl thead th').forEach((h) => h.classList.remove('sort-asc', 'sort-desc'));
         th.classList.add(asc ? 'sort-asc' : 'sort-desc');
-        const rows = Array.from(tbody.querySelectorAll('tr'));
+        closeDetails();
+        const rows = Array.from(tbody.querySelectorAll('tr[data-id]'));
         rows.sort((a, b) => {
           let av, bv;
           if (th.dataset.k === 'sent') {
@@ -220,9 +242,70 @@ function clientScript() {
       });
     });
 
+    function closeDetails() {
+      tbody.querySelectorAll('tr.detail').forEach((d) => d.remove());
+    }
+
+    // Click a row to see every pixel hit for it. Built with textContent only -
+    // the values come from outside (User-Agent headers), so never innerHTML.
+    function toggleDetail(tr) {
+      const next = tr.nextElementSibling;
+      const wasOpen = next && next.classList.contains('detail');
+      closeDetails();
+      if (wasOpen) return;
+      let h = { opens: [] };
+      try { h = JSON.parse(tr.dataset.history); } catch (e) {}
+      const d = document.createElement('tr');
+      d.className = 'detail';
+      const td = document.createElement('td');
+      td.colSpan = tr.children.length;
+      const head = document.createElement('div');
+      head.textContent = 'Registered by: ' + (h.via || 'unknown') + ' · ' +
+        (h.opens.length ? h.opens.length + ' pixel hit(s)' : 'no pixel hits yet');
+      td.appendChild(head);
+      if (h.opens.length) {
+        const ul = document.createElement('ul');
+        h.opens.forEach((o) => {
+          const li = document.createElement('li');
+          if (!o.counted) li.className = 'ignored';
+          li.textContent = o.t + ' — ' + (o.counted ? 'counted as open' : 'ignored (scanner / too soon)') +
+            (o.who ? ' · ' + o.who : '');
+          if (o.ua) {
+            li.appendChild(document.createTextNode(' '));
+            const code = document.createElement('code');
+            code.textContent = o.ua;
+            li.appendChild(code);
+          }
+          ul.appendChild(li);
+        });
+        td.appendChild(ul);
+      }
+      d.appendChild(td);
+      tr.after(d);
+    }
+
     tbody.addEventListener('click', async (e) => {
+      const delBtn = e.target.closest('button.del');
+      if (delBtn) {
+        if (!confirm('Permanently delete this tracked email? This cannot be undone.')) return;
+        delBtn.disabled = true;
+        try {
+          const res = await fetch('/api/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: delBtn.dataset.id }),
+          });
+          if (res.ok) location.reload();
+          else { alert('Failed to delete.'); delBtn.disabled = false; }
+        } catch (err) { alert('Network error.'); delBtn.disabled = false; }
+        return;
+      }
       const btn = e.target.closest('button.snooze');
-      if (!btn) return;
+      if (!btn) {
+        const row = e.target.closest('tr[data-id]');
+        if (row) toggleDetail(row);
+        return;
+      }
       btn.disabled = true;
       const id = btn.dataset.id;
       const nextSnoozed = btn.dataset.snoozed !== '1';

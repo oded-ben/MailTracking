@@ -43,6 +43,7 @@ Outlook/Gmail ──register──▶ Vercel /register ──▶ Upstash Redis
 api/pixel.js       GET  /o/<id>.gif   log open + alerts, return the pixel
 api/register.js    POST /register     called by the Outlook macro / Gmail extension
 api/dashboard.js   GET  /dashboard    searchable/sortable table, snooze, CSV export, per-source health banner
+api/delete.js      POST /api/delete  permanently remove one tracked email (dashboard Delete button)
 api/snooze.js      POST /api/snooze   stop the "not opened" nudge for one message
 api/export.js      GET  /api/export   every tracked message as a CSV download
 api/cron.js        GET  /api/cron     "not opened" sweep / digest send (Vercel cron)
@@ -96,6 +97,7 @@ The repo is already on GitHub, so use the Git integration:
    | `UNOPENED_HOURS` | default `24` | no |
    | `BURST_WINDOW_MIN` / `BURST_COUNT` | default `30` / `3` | no |
    | `IGNORE_FIRST_SECONDS` | default `15` | no |
+   | `RETENTION_DAYS` | how long each tracked email is kept (default `180`) | no |
    | `STALE_DAYS` | dashboard warns when Outlook macro / add-in / Gmail extension has registered nothing for this many days (default `7`) | no |
    | `NOTIFY_EVERY_OPEN` | `1` = email on every re-open (noisy) | no |
    | `DIGEST_MODE` | `1` = one daily summary email instead of instant alerts (default `0`) | no |
@@ -173,6 +175,12 @@ lost, but the second address won't reliably receive anything until you verify a
 real sending domain in Resend (removes the one-recipient restriction entirely).
 
 ## Signing in
+
+On the dashboard, **click a row** to expand its full pixel-hit history (time, whether it
+counted, which client, raw User-Agent). **Delete** permanently removes a row (handy for
+test sends); **Snooze** only silences the not-opened nudge. Records are kept
+`RETENTION_DAYS` (180) days, and the daily not-opened sweep only looks at the past week
+so its cost stays flat as history grows.
 
 `/dashboard` and `/api/export` require signing in at **`/login`** — the password
 is your `SHARED_SECRET`. On success you get a signed, HttpOnly session cookie

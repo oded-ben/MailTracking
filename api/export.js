@@ -24,11 +24,7 @@ export default async function handler(req, res) {
 
   const r = redis();
   const ids = await r.zrange("msgs", 0, -1, { rev: true });
-  const rows = [];
-  for (const id of ids) {
-    const m = await r.get(`msg:${id}`);
-    if (m) rows.push(m);
-  }
+  const rows = ids.length ? (await r.mget(...ids.map((id) => `msg:${id}`))).filter(Boolean) : [];
 
   const header = [
     "Sent",
