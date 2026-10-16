@@ -1,12 +1,12 @@
 // GET /o/<id>.gif  — logs the open, fires alerts, always returns the pixel.
-import { redis, GIF, TTL, cfg, notify, fmt, header, securityHeaders } from "../lib/tracker.js";
+import { redis, GIF, TTL, cfg, notify, fmt, header, securityHeaders, classifyUA } from "../lib/tracker.js";
 
 export default async function handler(req, res) {
   securityHeaders(res);
   const id = String(req.query.id || "").replace(/\.gif$/i, "").slice(0, 200);
 
   try {
-    await track(id);
+    await track(id, req.headers["user-agent"]);
   } catch {
     /* never let tracking break the image */
   }
@@ -19,7 +19,7 @@ export default async function handler(req, res) {
   res.status(200).send(GIF);
 }
 
-async function track(id) {
+async function track(id, userAgent) {
   if (!id) return;
   const c = cfg();
   const r = redis();
@@ -30,12 +30,14 @@ async function track(id) {
   const now = Date.now();
   const sinceSend = now - m.createdAt;
 
-  // A hit within the first few seconds is almost always a security scanner or
-  // image proxy pre-fetching the message, not a human.
-  const isBot = sinceSend < c.IGNORE_FIRST_SECONDS * 1000;
+  // Two independent signals that a hit is not a human: it arrived within the
+  // first few seconds (a gateway pre-fetching the message), or its User-Agent
+  // is a known scanner/bot. Only the User-Agent string is kept, never the IP.
+  const client = classifyUA(userAgent);
+  const isBot = sinceSend < c.IGNORE_FIRST_SECONDS * 1000 || client.bot;
 
   m.opens = m.opens || [];
-  m.opens.push({ t: now, bot: isBot });
+  m.opens.push({ t: now, bot: isBot, k: client.kind, ua: String(userAgent || "").slice(0, 120) });
   if (m.opens.length > 300) m.opens = m.opens.slice(-300);
   const human = m.opens.filter((o) => !o.bot);
 

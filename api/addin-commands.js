@@ -26,45 +26,6 @@ export default function handler(req, res) {
 var BASE = ${JSON.stringify(base)};
 var KEY = ${JSON.stringify(key)};
 
-// TEMPORARY diagnostics: this runtime is a hidden background context with no
-// console we can read, so it self-reports checkpoints to our own backend
-// instead - GET /api/addin-debug?k=SHARED_SECRET to read them back. Remove
-// once we've confirmed where (if anywhere) the handler is actually failing.
-function ping(checkpoint, detail) {
-  try {
-    var x = new XMLHttpRequest();
-    x.open('POST', BASE + '/api/addin-debug', true);
-    x.setRequestHeader('Content-Type', 'application/json');
-    x.setRequestHeader('X-Track-Key', KEY);
-    x.send(JSON.stringify({ checkpoint: checkpoint, detail: String(detail || '') }));
-  } catch (e) {
-    /* nothing more we can do if even this fails */
-  }
-}
-
-// Fires the instant this script is parsed and executed by whatever runtime
-// loaded it - the single most important checkpoint, since it's never been
-// confirmed that this even happens for New Outlook's hidden runtime.
-(function () {
-  var info = '';
-  try {
-    var d = Office && Office.context && Office.context.diagnostics;
-    info = d ? (d.host + ' ' + d.platform + ' ' + d.version) : 'no Office.context yet';
-  } catch (e) {
-    info = 'error reading diagnostics: ' + e.message;
-  }
-  // How long the document itself has existed by the time our script runs -
-  // a proxy for how much of the delay is "loading commands.html/office.js/
-  // commands.js" versus something inside our own async logic.
-  try {
-    var t = performance.timing;
-    info += ' | ms since navigationStart: ' + (Date.now() - t.navigationStart);
-  } catch (e) {
-    info += ' | timing unavailable: ' + e.message;
-  }
-  ping('script-loaded', info);
-})();
-
 // Each Office.js getAsync/XHR call is a network round-trip to Exchange. The
 // original version chained six of them one after another (subject -> to ->
 // cc -> register -> body-get -> body-set), which was slow enough in practice
@@ -73,13 +34,11 @@ function ping(checkpoint, detail) {
 // parallel, then doing the two independent writes (register + body-set) in
 // parallel, cuts that to two round-trips' worth of latency instead of six.
 function onMessageSendHandler(event) {
-  ping('handler-invoked');
   var item = Office.context.mailbox.item;
   var done = false;
   function finish(why) {
     if (done) return;
     done = true;
-    ping('finishing', why);
     event.completed({ allowEvent: true });
   }
   // Safety net, tightened from the original 4s specifically because that was
@@ -118,7 +77,6 @@ function onMessageSendHandler(event) {
     });
 
     function proceed() {
-      ping('fetches-complete', 'subject len ' + subject.length + ', to ' + toList.length + ', cc ' + ccList.length + ', body len ' + bodyHtml.length);
       try {
         // Bcc intentionally excluded - same rule as the VBA macro and the
         // Gmail extension: Bcc's whole point is recipients don't see each
@@ -147,7 +105,6 @@ function onMessageSendHandler(event) {
 
         var toJoin = 2;
         function joined(who) {
-          ping('joined:' + who);
           toJoin--;
           if (toJoin <= 0) {
             clearTimeout(safety);
@@ -177,13 +134,11 @@ function onMessageSendHandler(event) {
           joined('body-set-exception:' + e.message);
         }
       } catch (e) {
-        ping('proceed-exception', e.message);
         clearTimeout(safety);
         finish('proceed-exception');
       }
     }
   } catch (e) {
-    ping('outer-exception', e.message);
     clearTimeout(safety);
     finish('outer-exception');
   }
@@ -191,12 +146,10 @@ function onMessageSendHandler(event) {
 
 // Required: maps the manifest's LaunchEvent FunctionName to this handler.
 // Without this call, a failed/slow add-in load can block sending entirely.
-ping('before-associate', typeof Office !== 'undefined' && Office.actions ? 'Office.actions exists' : 'Office.actions MISSING');
 try {
   Office.actions.associate("onMessageSendHandler", onMessageSendHandler);
-  ping('after-associate-success');
 } catch (e) {
-  ping('associate-exception', e.message);
+  /* nothing to report to - Outlook will simply send untracked */
 }
 `;
 

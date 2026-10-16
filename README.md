@@ -42,7 +42,7 @@ Outlook/Gmail ──register──▶ Vercel /register ──▶ Upstash Redis
 ```
 api/pixel.js       GET  /o/<id>.gif   log open + alerts, return the pixel
 api/register.js    POST /register     called by the Outlook macro / Gmail extension
-api/dashboard.js   GET  /dashboard    searchable/sortable table, snooze, CSV export
+api/dashboard.js   GET  /dashboard    searchable/sortable table, snooze, CSV export, per-source health banner
 api/snooze.js      POST /api/snooze   stop the "not opened" nudge for one message
 api/export.js      GET  /api/export   every tracked message as a CSV download
 api/cron.js        GET  /api/cron     "not opened" sweep / digest send (Vercel cron)
@@ -96,6 +96,7 @@ The repo is already on GitHub, so use the Git integration:
    | `UNOPENED_HOURS` | default `24` | no |
    | `BURST_WINDOW_MIN` / `BURST_COUNT` | default `30` / `3` | no |
    | `IGNORE_FIRST_SECONDS` | default `15` | no |
+   | `STALE_DAYS` | dashboard warns when Outlook macro / add-in / Gmail extension has registered nothing for this many days (default `7`) | no |
    | `NOTIFY_EVERY_OPEN` | `1` = email on every re-open (noisy) | no |
    | `DIGEST_MODE` | `1` = one daily summary email instead of instant alerts (default `0`) | no |
    | `NOTIFY_SENDER_TOO` | `1` = also cc the sending account on instant alerts (default `0`) | no |
@@ -289,7 +290,12 @@ export data, or snooze/unsnooze anything, since those still require
 - **Security gateways / image proxies** (Mimecast, Proofpoint, Gmail's proxy) fetch
   the pixel themselves → a *false* open, often seconds after you send. The function
   ignores hits inside `IGNORE_FIRST_SECONDS` and sends only **one** burst alert,
-  but can't perfectly tell a scanner from a keen reader.
+  but can't perfectly tell a scanner from a keen reader. It also reads each hit's
+  **User-Agent** (never the IP) to label who fetched the pixel: hits from known
+  scanners/bots/scripts are discarded as non-opens, and the dashboard and first-open
+  alert say *via Gmail / Outlook / browser / Apple Mail*. Apple Mail hits are counted
+  but flagged "maybe prefetch", because Apple's Mail Privacy Protection loads images
+  on delivery and looks like a real client.
 - **Gmail recipients**: Google caches the proxied pixel, so re-opens undercount.
   "Opened many times" is most reliable when the recipient is on Outlook/Apple Mail.
 - **Plain-text emails** can't carry a pixel (the macro upgrades them to HTML).

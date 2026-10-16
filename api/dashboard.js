@@ -2,7 +2,7 @@
 // per-row snooze button that stops the "not opened" nudge for messages you
 // don't expect (or care about) a reply to. Requires signing in at /login -
 // no secret sits in this URL, so it's safe to bookmark.
-import { redis, cfg, fmt, hasValidSession, securityHeaders } from "../lib/tracker.js";
+import { redis, cfg, fmt, hasValidSession, securityHeaders, sourceOf, SOURCES } from "../lib/tracker.js";
 
 export default async function handler(req, res) {
   securityHeaders(res, { noStore: true });
@@ -35,14 +35,67 @@ export default async function handler(req, res) {
   let openedCount = 0;
   let snoozedCount = 0;
 
+  // Health: when did each tracker (macro / add-in / Gmail) last register a send?
+  // Uses the heartbeat keys written by /register, and also the rows themselves
+  // so it is accurate immediately after deploy. A silent source is the signature
+  // of a broken integration (e.g. the Gmail extension losing its context).
+  const lastSeen = Object.fromEntries(SOURCES.map((s) => [s, 0]));
+  for (const m of rows) {
+    const s = sourceOf(m.id);
+    lastSeen[s] = Math.max(lastSeen[s], m.createdAt || 0);
+  }
+  await Promise.all(
+    SOURCES.map(async (s) => {
+      try {
+        const v = Number(await r.get(`lastseen:${s}`));
+        if (v > lastSeen[s]) lastSeen[s] = v;
+      } catch {
+        /* heartbeat is optional */
+      }
+    })
+  );
+  const SOURCE_LABEL = { macro: "Outlook macro", addin: "Outlook add-in", gmail: "Gmail extension" };
+  const ago = (ts) => {
+    if (!ts) return "never";
+    const mins = Math.round((Date.now() - ts) / 60000);
+    if (mins < 60) return `${Math.max(mins, 1)} min ago`;
+    if (mins < 60 * 48) return `${Math.round(mins / 60)} h ago`;
+    return `${Math.round(mins / 1440)} days ago`;
+  };
+  const staleMs = c.STALE_DAYS * 86400000;
+  const stale = SOURCES.filter((s) => Date.now() - lastSeen[s] > staleMs);
+  const health =
+    `<div class="health${stale.length ? " warn" : ""}">` +
+    (stale.length
+      ? `<strong>Heads up:</strong> no registrations from ${stale
+          .map((s) => esc(SOURCE_LABEL[s]))
+          .join(" or ")} in ${c.STALE_DAYS}+ days. If you have sent mail from ${
+          stale.length > 1 ? "them" : "it"
+        } since, tracking there may be broken.<br>`
+      : "") +
+    `Last send registered &mdash; ` +
+    SOURCES.map((s) => `${SOURCE_LABEL[s]}: ${ago(lastSeen[s])}`).join(" &middot; ") +
+    `</div>`;
+
+  const CLIENT_LABEL = {
+    gmail: "Gmail",
+    apple: "Apple Mail, may be a prefetch",
+    outlook: "Outlook",
+    browser: "browser / webmail",
+    other: "unknown client",
+  };
+
   const body = rows
     .map((m) => {
       const human = (m.opens || []).filter((o) => !o.bot);
       const isSnoozed = !!m.snoozed && !human.length;
       if (human.length) openedCount++;
       if (isSnoozed) snoozedCount++;
+      // Who made the first human hit (older rows have no client info).
+      const firstKind = human[0] && human[0].k;
+      const via = firstKind && CLIENT_LABEL[firstKind] ? ` <small>via ${CLIENT_LABEL[firstKind]}</small>` : "";
       const status = human.length
-        ? `opened ${human.length}x &mdash; first ${fmt(m.firstOpenAt, c.TZ)}`
+        ? `opened ${human.length}x &mdash; first ${fmt(m.firstOpenAt, c.TZ)}${via}`
         : (m.opens || []).length
         ? `only scanner hits (${m.opens.length})`
         : "not opened";
@@ -83,10 +136,14 @@ export default async function handler(req, res) {
         .summary{color:#444;margin:0 0 10px}
         button.filt{font:inherit;color:inherit;background:none;border:none;padding:0;cursor:pointer;text-decoration:underline dotted}
         button.filt.active{font-weight:600;color:#0645ad;text-decoration:none}
+        .health{background:#eef6ee;border:1px solid #b9d9b9;border-radius:6px;padding:8px 12px;margin:0 0 12px;color:#245c24}
+        .health.warn{background:#fff4e0;border-color:#f0c36d;color:#7a4b00}
+        small{color:#666}
         .table-wrap{overflow-x:auto}
         table{min-width:640px}
       </style>` +
       `<h2>Tracked emails (<span id="count">${rows.length}</span>)</h2>` +
+      health +
       `<div class="summary">` +
       `<button class="filt active" data-filter="all">${rows.length} tracked</button> &middot; ` +
       `<button class="filt" data-filter="opened">${openedCount} opened</button> &middot; ` +

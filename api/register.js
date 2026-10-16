@@ -4,7 +4,7 @@
 // commands.js is served publicly, so its key is deliberately low-privilege:
 // leaking it only allows creating junk register entries, nothing else).
 import crypto from "node:crypto";
-import { redis, TTL, safeEqual, securityHeaders } from "../lib/tracker.js";
+import { redis, TTL, safeEqual, securityHeaders, sourceOf } from "../lib/tracker.js";
 
 // Truncate (never reject) so an oversized payload can't bloat storage, while
 // a legitimately long subject/recipient list still gets through unharmed.
@@ -91,6 +91,11 @@ export default async function handler(req, res) {
   const r = redis();
   const proto = req.headers["x-forwarded-proto"] || "https";
   const host = req.headers["host"];
+
+  // Per-source heartbeat for the dashboard's "has this tracker gone quiet?"
+  // banner. Counts duplicates too: the point is "is this source still alive".
+  // Best-effort - never let it block a registration.
+  await r.set(`lastseen:${sourceOf(rec.id)}`, rec.createdAt).catch(() => {});
 
   const dup = await claimOrFindDuplicate(r, rec);
   if (dup) {
