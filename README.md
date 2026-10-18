@@ -43,7 +43,7 @@ Outlook/Gmail ──register──▶ Vercel /register ──▶ Upstash Redis
 api/pixel.js       GET  /o/<id>.gif   log open + alerts, return the pixel
 api/register.js    POST /register     called by the Outlook macro / Gmail extension
 api/dashboard.js   GET  /dashboard    searchable/sortable table, snooze, CSV export, per-source health banner
-api/delete.js      POST /api/delete  permanently remove one tracked email (dashboard Delete button)
+api/delete.js      POST /api/delete  permanently remove tracked emails (dashboard bulk delete)
 api/snooze.js      POST /api/snooze   stop the "not opened" nudge for one message
 api/export.js      GET  /api/export   every tracked message as a CSV download
 api/cron.js        GET  /api/cron     "not opened" sweep / digest send (Vercel cron)
@@ -177,8 +177,8 @@ real sending domain in Resend (removes the one-recipient restriction entirely).
 ## Signing in
 
 On the dashboard, **click a row** to expand its full pixel-hit history (time, whether it
-counted, which client, raw User-Agent). **Delete** permanently removes a row (handy for
-test sends); **Snooze** only silences the not-opened nudge. Records are kept
+counted, which client, raw User-Agent). Tick the checkbox on the left of any rows (the header box selects all shown) and press
+**Delete selected** to remove them permanently (handy for test sends and duplicates); **Snooze** only silences the not-opened nudge. Records are kept
 `RETENTION_DAYS` (180) days, and the daily not-opened sweep only looks at the past week
 so its cost stays flat as history grows.
 

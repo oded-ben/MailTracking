@@ -115,14 +115,14 @@ export default async function handler(req, res) {
         `<tr data-id="${esc(m.id)}" data-sent="${m.createdAt}" data-history="${esc(history)}" ` +
         `data-status="${human.length ? "opened" : "not-opened"}" data-snoozed="${isSnoozed ? 1 : 0}" ` +
         `class="${isSnoozed ? "snoozed" : ""}">` +
+        `<td class="selcell"><input type="checkbox" class="sel" aria-label="Select this email"></td>` +
         `<td>${fmt(m.createdAt, c.TZ)}</td>` +
         `<td>${esc(m.subject)}</td>` +
         `<td>${esc(m.account || "-")}</td>` +
         `<td>${esc(m.to)}</td>` +
         `<td>${status}${isSnoozed ? " (snoozed)" : ""}</td>` +
         `<td><button class="snooze" data-id="${esc(m.id)}" data-snoozed="${isSnoozed ? 1 : 0}">` +
-        `${isSnoozed ? "Un-snooze" : "Snooze"}</button> ` +
-        `<button class="del" data-id="${esc(m.id)}">Delete</button></td>` +
+        `${isSnoozed ? "Un-snooze" : "Snooze"}</button></td>` +
         `</tr>`
       );
     })
@@ -143,8 +143,10 @@ export default async function handler(req, res) {
         th.sort-asc::after{content:" \\25B2"}
         th.sort-desc::after{content:" \\25BC"}
         tr.snoozed{opacity:.55}
-        button.snooze,button.del{font:inherit;padding:3px 10px;cursor:pointer}
-        button.del{color:#a30000}
+        button.snooze,button.bulk{font:inherit;padding:3px 10px;cursor:pointer}
+        button.bulk{color:#a30000}
+        button.bulk:disabled{color:#999;cursor:default}
+        td.selcell,th.selcell{width:1%;text-align:center;cursor:default}
         #tbl tbody tr[data-id]{cursor:pointer}
         tr.detail td{background:#fafafa;cursor:default}
         tr.detail ul{margin:4px 0 0;padding-left:18px}
@@ -170,8 +172,10 @@ export default async function handler(req, res) {
       `<button class="filt" data-filter="snoozed">${snoozedCount} snoozed</button>` +
       `</div>` +
       `<div class="controls"><input type="search" id="q" placeholder="Search subject / account / recipient / status…">` +
+      `<button class="bulk" id="bulkdel" disabled>Delete selected (0)</button>` +
       `<a href="/api/export">Export CSV</a><a href="/logout">Log out</a></div>` +
       `<div class="table-wrap"><table id="tbl"><thead><tr>` +
+      `<th class="selcell"><input type="checkbox" id="selall" aria-label="Select all shown"></th>` +
       `<th data-k="sent">Sent</th><th data-k="text">Subject</th><th data-k="text">From</th>` +
       `<th data-k="text">To</th><th data-k="text">Status</th><th></th>` +
       `</tr></thead><tbody>${body}</tbody></table></div>` +
@@ -204,9 +208,60 @@ function clientScript() {
         const show = matchesFilter(tr) && tr.textContent.toLowerCase().includes(term);
         tr.style.display = show ? '' : 'none';
         if (show) visible++;
+        // a row that is filtered out must never stay selected for deletion
+        else tr.querySelector('input.sel').checked = false;
       });
       empty.style.display = visible === 0 ? '' : 'none';
+      updateSelection();
     }
+
+    const selAll = document.getElementById('selall');
+    const bulkDel = document.getElementById('bulkdel');
+
+    function selectedRows() {
+      return Array.from(tbody.querySelectorAll('tr[data-id]')).filter(
+        (tr) => tr.style.display !== 'none' && tr.querySelector('input.sel').checked
+      );
+    }
+
+    function updateSelection() {
+      const n = selectedRows().length;
+      bulkDel.textContent = 'Delete selected (' + n + ')';
+      bulkDel.disabled = n === 0;
+      const shown = Array.from(tbody.querySelectorAll('tr[data-id]')).filter((tr) => tr.style.display !== 'none');
+      selAll.checked = shown.length > 0 && n === shown.length;
+      selAll.indeterminate = n > 0 && n < shown.length;
+    }
+
+    selAll.addEventListener('change', () => {
+      tbody.querySelectorAll('tr[data-id]').forEach((tr) => {
+        if (tr.style.display !== 'none') tr.querySelector('input.sel').checked = selAll.checked;
+      });
+      updateSelection();
+    });
+
+    tbody.addEventListener('change', (e) => {
+      if (e.target.matches('input.sel')) updateSelection();
+    });
+
+    bulkDel.addEventListener('click', async () => {
+      const rows = selectedRows();
+      if (!rows.length) return;
+      const msg = rows.length === 1
+        ? 'Permanently delete 1 tracked email? This cannot be undone.'
+        : 'Permanently delete ' + rows.length + ' tracked emails? This cannot be undone.';
+      if (!confirm(msg)) return;
+      bulkDel.disabled = true;
+      try {
+        const res = await fetch('/api/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: rows.map((tr) => tr.dataset.id) }),
+        });
+        if (res.ok) location.reload();
+        else { alert('Failed to delete.'); updateSelection(); }
+      } catch (err) { alert('Network error.'); updateSelection(); }
+    });
 
     q.addEventListener('input', applyFilters);
 
@@ -219,7 +274,8 @@ function clientScript() {
       });
     });
 
-    document.querySelectorAll('#tbl thead th[data-k]').forEach((th, idx) => {
+    document.querySelectorAll('#tbl thead th[data-k]').forEach((th) => {
+      const idx = th.cellIndex;
       th.addEventListener('click', () => {
         const asc = !th.classList.contains('sort-asc');
         document.querySelectorAll('#tbl thead th').forEach((h) => h.classList.remove('sort-asc', 'sort-desc'));
@@ -285,23 +341,9 @@ function clientScript() {
     }
 
     tbody.addEventListener('click', async (e) => {
-      const delBtn = e.target.closest('button.del');
-      if (delBtn) {
-        if (!confirm('Permanently delete this tracked email? This cannot be undone.')) return;
-        delBtn.disabled = true;
-        try {
-          const res = await fetch('/api/delete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: delBtn.dataset.id }),
-          });
-          if (res.ok) location.reload();
-          else { alert('Failed to delete.'); delBtn.disabled = false; }
-        } catch (err) { alert('Network error.'); delBtn.disabled = false; }
-        return;
-      }
       const btn = e.target.closest('button.snooze');
       if (!btn) {
+        if (e.target.closest('.selcell')) return; // checkbox cell: select, don't expand
         const row = e.target.closest('tr[data-id]');
         if (row) toggleDetail(row);
         return;

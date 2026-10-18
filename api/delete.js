@@ -1,7 +1,9 @@
-// POST /api/delete  — dashboard button: permanently remove one tracked message.
-// Body: { id }. Same auth as /api/snooze: the dashboard's session cookie, or
-// the X-Track-Key header (SHARED_SECRET) for scripting.
-import { deleteMessage, safeEqual, securityHeaders, hasValidSession } from "../lib/tracker.js";
+// POST /api/delete  — dashboard bulk delete: permanently remove tracked messages.
+// Body: { ids: [...] } (or a single { id }). Same auth as /api/snooze: the
+// dashboard's session cookie, or the X-Track-Key header (SHARED_SECRET).
+import { deleteMessages, safeEqual, securityHeaders, hasValidSession } from "../lib/tracker.js";
+
+const MAX_IDS = 500;
 
 export default async function handler(req, res) {
   securityHeaders(res);
@@ -20,9 +22,11 @@ export default async function handler(req, res) {
       b = null;
     }
   }
-  if (!b || !b.id || typeof b.id !== "string") return res.status(400).json({ error: "missing id" });
+  const raw = Array.isArray(b && b.ids) ? b.ids : b && b.id ? [b.id] : [];
+  const ids = [...new Set(raw.filter((x) => typeof x === "string" && x).map((x) => x.slice(0, 200)))];
+  if (!ids.length) return res.status(400).json({ error: "missing id(s)" });
+  if (ids.length > MAX_IDS) return res.status(400).json({ error: `max ${MAX_IDS} per request` });
 
-  const existed = await deleteMessage(b.id.slice(0, 200));
-  if (!existed) return res.status(404).json({ error: "not found" });
-  res.status(200).json({ ok: true });
+  const deleted = await deleteMessages(ids);
+  res.status(200).json({ ok: true, deleted });
 }
