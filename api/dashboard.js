@@ -101,9 +101,7 @@ export default async function handler(req, res) {
       const status = human.length
         ? `opened ${human.length}x &mdash; first ${fmt(m.firstOpenAt, c.TZ)}${via}`
         : (m.opens || []).length
-        ? `<span title="The image was loaded, but only by mail filters or within seconds of sending, so nobody is known to have read it.">` +
-          `not read &mdash; only mail-filter hits (${m.opens.length})</span> ` +
-          `<small>${[...new Set(m.opens.map((o) => (o.k === "scanner" ? "security scanner / bot" : "arrived right after send")))].join(", ")}</small>`
+        ? `<span title="The image was loaded ${m.opens.length}x, but only by mail filters or within seconds of sending. Click the row for details.">not read</span>`
         : "not opened";
       // Open history for the click-to-expand detail row (latest 50 hits).
       const history = JSON.stringify({
