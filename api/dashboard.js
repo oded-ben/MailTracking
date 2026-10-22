@@ -34,6 +34,7 @@ export default async function handler(req, res) {
 
   let openedCount = 0;
   let snoozedCount = 0;
+  let importantCount = 0;
 
   // Health: when did each tracker (macro / add-in / Gmail) last register a send?
   // Uses the heartbeat keys written by /register, and also the rows themselves
@@ -93,13 +94,16 @@ export default async function handler(req, res) {
       const isSnoozed = !!m.snoozed && !human.length;
       if (human.length) openedCount++;
       if (isSnoozed) snoozedCount++;
+      if (m.important) importantCount++;
       // Who made the first human hit (older rows have no client info).
       const firstKind = human[0] && human[0].k;
       const via = firstKind && CLIENT_LABEL[firstKind] ? ` <small>via ${CLIENT_LABEL[firstKind]}</small>` : "";
       const status = human.length
         ? `opened ${human.length}x &mdash; first ${fmt(m.firstOpenAt, c.TZ)}${via}`
         : (m.opens || []).length
-        ? `only scanner hits (${m.opens.length})`
+        ? `<span title="The image was loaded, but only by mail filters or within seconds of sending, so nobody is known to have read it.">` +
+          `not read &mdash; only mail-filter hits (${m.opens.length})</span> ` +
+          `<small>${[...new Set(m.opens.map((o) => (o.k === "scanner" ? "security scanner / bot" : "arrived right after send")))].join(", ")}</small>`
         : "not opened";
       // Open history for the click-to-expand detail row (latest 50 hits).
       const history = JSON.stringify({
@@ -113,7 +117,7 @@ export default async function handler(req, res) {
       });
       return (
         `<tr data-id="${esc(m.id)}" data-sent="${m.createdAt}" data-history="${esc(history)}" ` +
-        `data-status="${human.length ? "opened" : "not-opened"}" data-snoozed="${isSnoozed ? 1 : 0}" ` +
+        `data-status="${human.length ? "opened" : "not-opened"}" data-snoozed="${isSnoozed ? 1 : 0}" data-important="${m.important ? 1 : 0}" ` +
         `class="${isSnoozed ? "snoozed" : ""}">` +
         `<td class="selcell"><input type="checkbox" class="sel" aria-label="Select this email"></td>` +
         `<td>${fmt(m.createdAt, c.TZ)}</td>` +
@@ -122,7 +126,10 @@ export default async function handler(req, res) {
         `<td>${esc(m.to)}</td>` +
         `<td>${status}${isSnoozed ? " (snoozed)" : ""}</td>` +
         `<td><button class="snooze" data-id="${esc(m.id)}" data-snoozed="${isSnoozed ? 1 : 0}">` +
-        `${isSnoozed ? "Un-snooze" : "Snooze"}</button></td>` +
+        `${isSnoozed ? "Un-snooze" : "Snooze"}</button> ` +
+        `<button class="star${m.important ? " on" : ""}" data-id="${esc(m.id)}" data-important="${m.important ? 1 : 0}" ` +
+        `title="${m.important ? "Important - extra reminders at 3 and 7 days if unopened. Click to remove." : "Mark important: get extra reminders at 3 and 7 days if still unopened."}">` +
+        `${m.important ? "\u2605" : "\u2606"}</button></td>` +
         `</tr>`
       );
     })
@@ -145,6 +152,8 @@ export default async function handler(req, res) {
         tr.snoozed{opacity:.55}
         button.snooze,button.bulk{font:inherit;padding:3px 10px;cursor:pointer}
         button.bulk{color:#a30000}
+        button.star{font:inherit;padding:3px 8px;cursor:pointer;background:none;border:1px solid #bbb;border-radius:3px;color:#888}
+        button.star.on{color:#d49a00;border-color:#d49a00}
         button.bulk:disabled{color:#999;cursor:default}
         td.selcell,th.selcell{width:1%;text-align:center;cursor:default}
         #tbl tbody tr[data-id]{cursor:pointer}
@@ -169,7 +178,8 @@ export default async function handler(req, res) {
       `<button class="filt active" data-filter="all">${rows.length} tracked</button> &middot; ` +
       `<button class="filt" data-filter="opened">${openedCount} opened</button> &middot; ` +
       `<button class="filt" data-filter="not-opened">${rows.length - openedCount} not opened</button> &middot; ` +
-      `<button class="filt" data-filter="snoozed">${snoozedCount} snoozed</button>` +
+      `<button class="filt" data-filter="snoozed">${snoozedCount} snoozed</button> &middot; ` +
+      `<button class="filt" data-filter="important">${importantCount} important</button>` +
       `</div>` +
       `<div class="controls"><input type="search" id="q" placeholder="Search subject / account / recipient / status…">` +
       `<button class="bulk" id="bulkdel" disabled>Delete selected (0)</button>` +
@@ -197,6 +207,7 @@ function clientScript() {
     function matchesFilter(tr) {
       if (statusFilter === 'all') return true;
       if (statusFilter === 'snoozed') return tr.dataset.snoozed === '1';
+      if (statusFilter === 'important') return tr.dataset.important === '1';
       return tr.dataset.status === statusFilter;
     }
 
@@ -341,6 +352,20 @@ function clientScript() {
     }
 
     tbody.addEventListener('click', async (e) => {
+      const star = e.target.closest('button.star');
+      if (star) {
+        star.disabled = true;
+        try {
+          const res = await fetch('/api/important', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: star.dataset.id, important: star.dataset.important !== '1' }),
+          });
+          if (res.ok) location.reload();
+          else { alert('Failed to update.'); star.disabled = false; }
+        } catch (err) { alert('Network error.'); star.disabled = false; }
+        return;
+      }
       const btn = e.target.closest('button.snooze');
       if (!btn) {
         if (e.target.closest('.selcell')) return; // checkbox cell: select, don't expand

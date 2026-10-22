@@ -1,6 +1,6 @@
 // GET /api/cron  — the "still not opened" sweep.
 // Called automatically by the Vercel cron in vercel.json, or manually with ?k=SHARED_SECRET.
-import { runSweep, safeEqual, securityHeaders } from "../lib/tracker.js";
+import { runSweep, maybeSendBackup, safeEqual, securityHeaders } from "../lib/tracker.js";
 
 export default async function handler(req, res) {
   securityHeaders(res);
@@ -19,5 +19,8 @@ export default async function handler(req, res) {
   }
 
   const result = await runSweep();
-  res.status(200).json({ ok: true, ...result });
+  // ?backup=1 (manual, authenticated) forces a backup email now; otherwise it
+  // goes out weekly on Sundays.
+  const backup = await maybeSendBackup(String(req.query.backup || "") === "1");
+  res.status(200).json({ ok: true, ...result, ...backup });
 }

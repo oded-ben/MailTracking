@@ -43,6 +43,7 @@ Outlook/Gmail ──register──▶ Vercel /register ──▶ Upstash Redis
 api/pixel.js       GET  /o/<id>.gif   log open + alerts, return the pixel
 api/register.js    POST /register     called by the Outlook macro / Gmail extension
 api/dashboard.js   GET  /dashboard    searchable/sortable table, snooze, CSV export, per-source health banner
+api/important.js   POST /api/important  star a row: extra not-opened reminders at 3 and 7 days
 api/delete.js      POST /api/delete  permanently remove tracked emails (dashboard bulk delete)
 api/snooze.js      POST /api/snooze   stop the "not opened" nudge for one message
 api/export.js      GET  /api/export   every tracked message as a CSV download
@@ -178,7 +179,7 @@ real sending domain in Resend (removes the one-recipient restriction entirely).
 
 On the dashboard, **click a row** to expand its full pixel-hit history (time, whether it
 counted, which client, raw User-Agent). Tick the checkbox on the left of any rows (the header box selects all shown) and press
-**Delete selected** to remove them permanently (handy for test sends and duplicates); **Snooze** only silences the not-opened nudge. Records are kept
+**Delete selected** to remove them permanently (handy for test sends and duplicates); **Snooze** only silences the not-opened nudge for that row (it also leaves it out of the digest). The **\☆ star** marks a row Important: if it is still unopened you get extra reminders at 3 and 7 days, not just the one at 24 h. Every Sunday the daily cron also emails you a CSV backup of the whole table (`/api/cron?k=SECRET&backup=1` sends one on demand). Records are kept
 `RETENTION_DAYS` (180) days, and the daily not-opened sweep only looks at the past week
 so its cost stays flat as history grows.
 
