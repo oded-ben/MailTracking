@@ -73,6 +73,9 @@ of minutes) — details in that folder's README.
    sender can only email your own account address — fine for self-alerts. To send
    elsewhere, verify a domain later and set `NOTIFY_FROM`.
 2. **API Keys → Create API Key**, copy it.
+   If this Resend account is shared with other apps, give this one its own key
+   (sending access only). Every email it sends is also tagged `app=mailtracking`,
+   so webhooks and logs can tell tracker mail apart.
 
 ### 2. Deploy to Vercel
 
