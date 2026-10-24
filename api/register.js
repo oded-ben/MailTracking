@@ -24,11 +24,28 @@ const DEDUP_WINDOW_MS = 10000;
 // strings: the macro reports account "(default account)" (it can't resolve
 // one on a default Exchange account) while the add-in reports the real
 // address, and recipient strings differ in trailing "; " and display-name
-// formatting. Compare subject and the SET of recipient email addresses only.
+// formatting. For recipients inside your own Exchange organisation the macro
+// can even report an internal X.500 path (/O=EXCHANGELABS/...) instead of an
+// email address, so addresses can't be compared at all in that case. Compare
+// subject and the SET of recipients, keyed by display name when one is present
+// (identical in both trackers) and by email address otherwise (Gmail, bare
+// addresses).
 const normText = (s) => String(s ?? "").trim().toLowerCase();
 const recipientSet = (to) => {
-  const emails = String(to ?? "").toLowerCase().match(/[^\s<>;,"']+@[^\s<>;,"']+/g) || [];
-  return [...new Set(emails)].sort().join(",") || normText(to);
+  const keys = [];
+  for (const tok of String(to ?? "").split(";")) {
+    const t = tok.trim();
+    if (!t) continue;
+    const m = t.match(/^(.*?)\s*<([^>]*)>\s*$/);
+    if (m) {
+      const name = m[1].replace(/^["']+|["']+$/g, "").trim().toLowerCase();
+      keys.push(name && !name.includes("@") ? name : m[2].trim().toLowerCase());
+    } else {
+      const emails = t.toLowerCase().match(/[^\s<>;,"']+@[^\s<>;,"']+/g);
+      keys.push(...(emails || [t.toLowerCase()]));
+    }
+  }
+  return [...new Set(keys)].sort().join(",");
 };
 const isGenericAccount = (a) => {
   const v = normText(a);

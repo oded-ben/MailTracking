@@ -55,7 +55,7 @@ Private Sub Application_ItemSend(ByVal Item As Object, Cancel As Boolean)
     Dim recips As String, r As Outlook.Recipient
     For Each r In mail.Recipients
         If r.Type <> olBCC Then
-            recips = recips & r.Name & " <" & r.Address & ">; "
+            recips = recips & r.Name & " <" & SmtpOf(r) & ">; "
         End If
     Next
 
@@ -134,4 +134,19 @@ Private Function ExtractJsonString(ByVal json As String, ByVal key As String) As
     Else
         ExtractJsonString = Mid$(json, startPos, endPos - startPos)
     End If
+End Function
+
+' Recipient.Address is an internal X.500 path (/O=EXCHANGELABS/...) for people
+' inside your own Exchange organisation; ask Outlook for the real SMTP address.
+Private Function SmtpOf(r As Outlook.Recipient) As String
+    Dim s As String
+    s = r.Address
+    On Error Resume Next
+    If r.AddressEntry.Type = "EX" Then
+        Dim smtp As String
+        smtp = r.PropertyAccessor.GetProperty("http://schemas.microsoft.com/mapi/proptag/0x39FE001E")
+        If Len(smtp) > 0 Then s = smtp
+    End If
+    On Error GoTo 0
+    SmtpOf = s
 End Function
